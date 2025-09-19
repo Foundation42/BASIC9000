@@ -31,6 +31,7 @@ import {
 } from './host.js';
 import { createDefaultHostEnvironment } from './host-defaults.js';
 import type { RuntimeValue } from './runtime-values.js';
+import { parseSource, type ParserOptions } from './parser.js';
 import type { Token } from './tokenizer.js';
 
 export interface ExecutionOptions {
@@ -67,6 +68,28 @@ export async function executeSource(
   options: ExecutionOptions = {}
 ): Promise<ExecutionResult> {
   throw new Error('executeSource requires parsed program; use parseSource first.');
+}
+
+export class InterpreterSession {
+  private readonly context = new ExecutionContext();
+  private haltReason: 'END' | 'STOP' | undefined;
+
+  constructor(private readonly options: ExecutionOptions = {}) {}
+
+  public async run(source: string, parserOptions: ParserOptions = {}): Promise<ExecutionResult> {
+    const program = parseSource(source, parserOptions);
+    const evaluator = new Evaluator(program, this.context, this.options);
+    await evaluator.run();
+    this.haltReason = evaluator.haltReason;
+    const result = this.context.finalize(this.haltReason);
+    this.haltReason = undefined;
+    return result;
+  }
+
+  public reset(): void {
+    this.context.reset();
+    this.haltReason = undefined;
+  }
 }
 
 class ExecutionContext {
@@ -126,11 +149,22 @@ class ExecutionContext {
 
   public finalize(haltReason?: 'END' | 'STOP'): ExecutionResult {
     this.flush();
-    return {
+    const result: ExecutionResult = {
       outputs: this.outputs.slice(),
       variables: Object.fromEntries(this.variables.entries()),
       halted: haltReason
     };
+    this.outputs.length = 0;
+    this.currentPrintBuffer = '';
+    this.hasPendingBuffer = false;
+    return result;
+  }
+
+  public reset(): void {
+    this.variables.clear();
+    this.outputs.length = 0;
+    this.currentPrintBuffer = '';
+    this.hasPendingBuffer = false;
   }
 }
 
