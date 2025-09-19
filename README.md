@@ -232,23 +232,26 @@ FS.APPEND("log.txt", TIME.NOW() + " - Event logged")
 ```
 
 ### AI Integration
+
+![AI Integration](AI.png)
+
 ```basic
 REM Configure AI (OpenAI, Anthropic, or local server)
-AI.KEY "openai", your_api_key$
+AI.KEY("openai", "your-api-key-here")
 LET assistant = AI.CREATE("openai", "gpt-3.5-turbo")
 
 REM Or use a local Ollama server
 LET local_ai = AI.CREATE("generic", "llama2", "http://localhost:11434/v1")
 
 REM Configure and use
-AI.SYSTEM assistant, "You are a helpful BASIC programming tutor"
-AI.TEMPERATURE assistant, 0.7
+AI.SYSTEM(assistant, "You are a helpful BASIC programming tutor")
+AI.TEMPERATURE(assistant, 0.7)
 
 LET response$ = AI.GENERATE(assistant, "Explain loops in BASIC")
 PRINT response$
 
 REM Interactive conversation
-AI.USER assistant, "How do I read a file?"
+AI.USER(assistant, "How do I read a file?")
 LET answer$ = AI.ASSISTANT(assistant)
 PRINT answer$
 ```
