@@ -22,13 +22,19 @@ import type {
   StringLiteralNode,
   UnaryExpressionNode
 } from './ast.js';
+import {
+  HostEnvironment,
+  type HostFunctionContext,
+  isHostFunction,
+  isHostNamespace
+} from './host.js';
+import type { RuntimeValue } from './runtime-values.js';
 import type { Token } from './tokenizer.js';
-
-export type RuntimeValue = number | string;
 
 export interface ExecutionOptions {
   readonly maxSteps?: number;
   readonly maxCallDepth?: number;
+  readonly hostEnvironment?: HostEnvironment;
 }
 
 export interface ExecutionResult {
@@ -73,6 +79,11 @@ class ExecutionContext {
     const key = normalizeIdentifier(name);
     const coerced = coerceValueForIdentifier(name, value, token);
     this.variables.set(key, coerced);
+  }
+
+  public hasVariable(name: string): boolean {
+    const key = normalizeIdentifier(name);
+    return this.variables.has(key);
   }
 
   public writePrint(args: string[], trailing: PrintStatementNode['trailing']): void {
@@ -120,6 +131,7 @@ class Evaluator {
   private readonly forBindings = new Map<string, ForBinding>();
   private readonly forStack: ForFrame[] = [];
   private readonly gosubStack: StatementPointer[] = [];
+  private readonly hostEnvironment: HostEnvironment;
   private stepCount = 0;
   public haltReason: 'END' | 'STOP' | undefined;
 
@@ -128,6 +140,7 @@ class Evaluator {
     private readonly context: ExecutionContext,
     private readonly options: ExecutionOptions
   ) {
+    this.hostEnvironment = options.hostEnvironment ?? new HostEnvironment();
     program.lines.forEach((line, index) => {
       if (typeof line.lineNumber === 'number') {
         this.lineIndexByNumber.set(line.lineNumber, index);
@@ -293,13 +306,13 @@ class Evaluator {
       case 'StringLiteral':
         return expression.value;
       case 'Identifier':
-        return this.context.getVariable(expression.name);
+        return this.resolveIdentifier(expression);
       case 'UnaryExpression':
         return this.evaluateUnary(expression);
       case 'BinaryExpression':
         return this.evaluateBinary(expression);
       case 'CallExpression':
-        throw new RuntimeError('Function calls are not implemented yet', expression.closingParen);
+        return this.evaluateCallExpression(expression);
       case 'MemberExpression':
         return this.evaluateMemberExpression(expression);
       case 'AwaitExpression':
@@ -312,7 +325,26 @@ class Evaluator {
   }
 
   private evaluateMemberExpression(expression: MemberExpressionNode): RuntimeValue {
-    throw new RuntimeError('Property access is not implemented yet', expression.property.token);
+    const objectValue = this.evaluateExpression(expression.object);
+
+    if (isHostNamespace(objectValue)) {
+      const member = objectValue.getMember(expression.property.name);
+      if (typeof member === 'undefined') {
+        throw new RuntimeError(
+          `Unknown member '${expression.property.name}' on ${objectValue.name}`,
+          expression.property.token
+        );
+      }
+      return member as RuntimeValue;
+    }
+
+    throw new RuntimeError('Property access is not supported for this value', expression.property.token);
+  }
+
+  private evaluateCallExpression(expression: CallExpressionNode): RuntimeValue {
+    const callee = this.evaluateExpression(expression.callee);
+    const args = expression.args.map((arg) => this.evaluateExpression(arg));
+    return this.invokeCallable(callee, args, expression.closingParen);
   }
 
   private evaluateUnary(expression: UnaryExpressionNode): RuntimeValue {
@@ -586,6 +618,46 @@ class Evaluator {
       throw new RuntimeError('Exceeded maximum call depth', token);
     }
   }
+
+  private resolveIdentifier(identifier: IdentifierNode): RuntimeValue {
+    if (this.context.hasVariable(identifier.name)) {
+      return this.context.getVariable(identifier.name);
+    }
+
+    const hostEntry = this.hostEnvironment.get(identifier.name);
+    if (typeof hostEntry !== 'undefined') {
+      return hostEntry as RuntimeValue;
+    }
+
+    return this.context.getVariable(identifier.name);
+  }
+
+  private invokeCallable(callee: RuntimeValue, args: RuntimeValue[], token: Token): RuntimeValue {
+    if (isHostFunction(callee)) {
+      try {
+        return callee.invoke(args, this.makeHostFunctionContext(token));
+      } catch (error) {
+        throw this.wrapHostError(error, token);
+      }
+    }
+
+    throw new RuntimeError('Value is not callable', token);
+  }
+
+  private makeHostFunctionContext(token: Token): HostFunctionContext {
+    return {
+      getVariable: (name) => this.context.getVariable(name),
+      setVariable: (name, value) => this.context.setVariable(name, value, token)
+    };
+  }
+
+  private wrapHostError(error: unknown, token: Token): RuntimeError {
+    if (error instanceof RuntimeError) {
+      return error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return new RuntimeError(`Host function error: ${message}`, token);
+  }
 }
 
 interface StatementSignalJump {
@@ -647,20 +719,22 @@ function coerceValueForIdentifier(name: string, value: RuntimeValue, token: Toke
 
 function runtimeValueToString(value: RuntimeValue): string {
   if (typeof value === 'number') {
-    if (Number.isInteger(value)) {
-      return value.toString();
-    }
-    const text = value.toString();
-    return text;
+    return Number.isInteger(value) ? value.toString() : value.toString();
   }
-  return value;
+  if (typeof value === 'string') {
+    return value;
+  }
+  return hostValueToString(value);
 }
 
 function truthy(value: RuntimeValue): boolean {
   if (typeof value === 'number') {
     return value !== 0;
   }
-  return value.length > 0;
+  if (typeof value === 'string') {
+    return value.length > 0;
+  }
+  return true;
 }
 
 function booleanToRuntime(value: boolean): number {
@@ -668,18 +742,27 @@ function booleanToRuntime(value: boolean): number {
 }
 
 function toStringValue(value: RuntimeValue): string {
-  return typeof value === 'string' ? value : value.toString();
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value.toString();
+  }
+  return hostValueToString(value);
 }
 
 function toNumber(value: RuntimeValue, token: Token): number {
   if (typeof value === 'number') {
     return value;
   }
-  const parsed = Number(value);
-  if (Number.isNaN(parsed)) {
-    throw new RuntimeError(`Cannot convert '${value}' to number`, token);
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      throw new RuntimeError(`Cannot convert '${value}' to number`, token);
+    }
+    return parsed;
   }
-  return parsed;
+  throw new RuntimeError('Cannot convert host value to number', token);
 }
 
 function equals(left: RuntimeValue, right: RuntimeValue): boolean {
@@ -715,6 +798,9 @@ function toLineNumber(value: RuntimeValue, token: Token): number {
     }
     return value;
   }
+  if (typeof value !== 'string') {
+    throw new RuntimeError('GOTO requires an integer line number', token);
+  }
   const parsed = Number(value.trim());
   if (!Number.isInteger(parsed)) {
     throw new RuntimeError('GOTO requires an integer line number', token);
@@ -741,4 +827,14 @@ function pointerEquals(a: StatementPointer, b: StatementPointer): boolean {
 
 function endPointer(program: ProgramNode): StatementPointer {
   return { lineIndex: program.lines.length, statementIndex: 0 };
+}
+
+function hostValueToString(value: RuntimeValue): string {
+  if (isHostNamespace(value)) {
+    return `[Namespace ${value.name}]`;
+  }
+  if (isHostFunction(value)) {
+    return `[Function ${value.name}]`;
+  }
+  return String(value);
 }

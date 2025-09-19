@@ -5,6 +5,11 @@ import {
   RuntimeError,
   type ExecutionOptions
 } from '../../src/interpreter/evaluator.js';
+import {
+  HostEnvironment,
+  createFunction,
+  createNamespace
+} from '../../src/interpreter/host.js';
 
 const run = (source: string, options?: ExecutionOptions) =>
   executeProgram(parseSource(source), options);
@@ -62,6 +67,48 @@ describe('evaluator', () => {
     expect(result.halted).toBe('STOP');
     expect(result.outputs).toEqual([]);
     expect(result.variables).toMatchObject({ X: 10 });
+  });
+
+  it('invokes host namespace functions via member calls', () => {
+    const hostEnv = new HostEnvironment({
+      HTTP: createNamespace('HTTP', {
+        GET: createFunction('HTTP.GET', (args) => `GET:${args[0]}`)
+      })
+    });
+    const result = run('PRINT HTTP.GET("https://example.com")', { hostEnvironment: hostEnv });
+    expect(result.outputs).toEqual(['GET:https://example.com']);
+  });
+
+  it('passes execution context to host functions', () => {
+    const hostEnv = new HostEnvironment({
+      SYS: createNamespace('SYS', {
+        STORE: createFunction('SYS.STORE', (args, ctx) => {
+          ctx.setVariable('stored$', String(args[0] ?? ''));
+          return args[0] ?? '';
+        })
+      })
+    });
+    const result = run('SYS.STORE("DATA")\nPRINT stored$', { hostEnvironment: hostEnv });
+    expect(result.outputs).toEqual(['DATA']);
+  });
+
+  it('supports nested host namespaces', () => {
+    const hostEnv = new HostEnvironment({
+      AI: createNamespace('AI', {
+        ANALYZE: createNamespace('ANALYZE', {
+          TEXT: createFunction('AI.ANALYZE.TEXT', (args) => `ANALYSIS:${args[0]}`)
+        })
+      })
+    });
+    const result = run('PRINT AI.ANALYZE.TEXT("hello")', { hostEnvironment: hostEnv });
+    expect(result.outputs).toEqual(['ANALYSIS:hello']);
+  });
+
+  it('throws when accessing unknown host members', () => {
+    const hostEnv = new HostEnvironment({
+      HTTP: createNamespace('HTTP', {})
+    });
+    expect(() => run('PRINT HTTP.POST("/path")', { hostEnvironment: hostEnv })).toThrow(RuntimeError);
   });
 
   it('executes GOSUB/RETURN and resumes at the correct statement', () => {
