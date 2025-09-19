@@ -28,6 +28,7 @@ export type RuntimeValue = number | string;
 
 export interface ExecutionOptions {
   readonly maxSteps?: number;
+  readonly maxCallDepth?: number;
 }
 
 export interface ExecutionResult {
@@ -118,6 +119,7 @@ class Evaluator {
   private readonly lineIndexByNumber = new Map<number, number>();
   private readonly forBindings = new Map<string, ForBinding>();
   private readonly forStack: ForFrame[] = [];
+  private readonly gosubStack: StatementPointer[] = [];
   private stepCount = 0;
   public haltReason: 'END' | 'STOP' | undefined;
 
@@ -198,9 +200,9 @@ class Evaluator {
       case 'GotoStatement':
         return this.executeGoto(statement);
       case 'GosubStatement':
-        return this.unsupportedStatement('GOSUB is not implemented yet', statement.token);
+        return this.executeGosub(statement, position);
       case 'ReturnStatement':
-        return this.unsupportedStatement('RETURN is not implemented yet', statement.token);
+        return this.executeReturn(statement);
       case 'StopStatement':
         return { type: 'halt', reason: 'STOP' };
       case 'EndStatement':
@@ -421,7 +423,8 @@ class Evaluator {
 
           const pointerKey = makePointerKey(bindingSource.pointer);
           const nextPointer: StatementPointer = { lineIndex, statementIndex };
-          const afterNextPointer = this.findNextStatementPointer(lineIndex, statementIndex);
+          const afterNextPointer =
+            this.findNextStatementPointer(lineIndex, statementIndex) ?? endPointer(this.program);
           this.forBindings.set(pointerKey, {
             nextPointer,
             afterNextPointer,
@@ -475,8 +478,7 @@ class Evaluator {
 
     const continueCondition = stepValue > 0 ? startValue <= endValue : startValue >= endValue;
     if (!continueCondition) {
-      const targetPointer =
-        binding.afterNextPointer ?? advancePointer(binding.nextPointer) ?? binding.nextPointer;
+      const targetPointer = binding.afterNextPointer ?? endPointer(this.program);
       return {
         type: 'jump',
         targetLineIndex: targetPointer.lineIndex,
@@ -484,10 +486,11 @@ class Evaluator {
       };
     }
 
+    const nextCandidate = this.findNextStatementPointer(position.lineIndex, position.statementIndex);
     const bodyPointer =
-      this.findNextStatementPointer(position.lineIndex, position.statementIndex) ??
-      advancePointer(position) ??
-      binding.nextPointer;
+      nextCandidate && binding.nextPointer && !pointerEquals(nextCandidate, binding.nextPointer)
+        ? nextCandidate
+        : undefined;
 
     this.forStack.push({
       iteratorName,
@@ -543,6 +546,46 @@ class Evaluator {
     this.forStack.pop();
     return undefined;
   }
+
+  private executeGosub(
+    statement: GosubStatementNode,
+    position: StatementPosition
+  ): StatementSignal {
+    this.ensureCallDepthWithinBudget(statement.token);
+    const target = this.evaluateExpression(statement.target);
+    const lineNumber = toLineNumber(target, statement.token);
+    const lineIndex = this.lineIndexByNumber.get(lineNumber);
+    if (lineIndex === undefined) {
+      throw new RuntimeError(`Unknown subroutine line ${lineNumber}`, statement.token);
+    }
+
+    const resumePointer =
+      this.findNextStatementPointer(position.lineIndex, position.statementIndex) ??
+      endPointer(this.program);
+    this.gosubStack.push(resumePointer);
+
+    return { type: 'jump', targetLineIndex: lineIndex, targetStatementIndex: 0 };
+  }
+
+  private executeReturn(statement: ReturnStatementNode): StatementSignal {
+    if (this.gosubStack.length === 0) {
+      throw new RuntimeError('RETURN without GOSUB', statement.token);
+    }
+
+    const pointer = this.gosubStack.pop()!;
+    return {
+      type: 'jump',
+      targetLineIndex: pointer.lineIndex,
+      targetStatementIndex: pointer.statementIndex
+    };
+  }
+
+  private ensureCallDepthWithinBudget(token: Token): void {
+    const { maxCallDepth } = this.options;
+    if (typeof maxCallDepth === 'number' && this.gosubStack.length >= maxCallDepth) {
+      throw new RuntimeError('Exceeded maximum call depth', token);
+    }
+  }
 }
 
 interface StatementSignalJump {
@@ -565,7 +608,7 @@ interface StatementPointer {
 
 interface ForBinding {
   readonly nextPointer: StatementPointer;
-  readonly afterNextPointer?: StatementPointer;
+  readonly afterNextPointer: StatementPointer;
   readonly nextToken: Token;
 }
 
@@ -692,9 +735,10 @@ function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean):
   return -1;
 }
 
-function advancePointer(pointer: StatementPointer): StatementPointer | undefined {
-  return {
-    lineIndex: pointer.lineIndex,
-    statementIndex: pointer.statementIndex + 1
-  };
+function pointerEquals(a: StatementPointer, b: StatementPointer): boolean {
+  return a.lineIndex === b.lineIndex && a.statementIndex === b.statementIndex;
+}
+
+function endPointer(program: ProgramNode): StatementPointer {
+  return { lineIndex: program.lines.length, statementIndex: 0 };
 }

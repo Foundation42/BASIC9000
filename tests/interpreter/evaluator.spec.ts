@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { parseSource } from '../../src/interpreter/parser.js';
-import { executeProgram, RuntimeError } from '../../src/interpreter/evaluator.js';
+import {
+  executeProgram,
+  RuntimeError,
+  type ExecutionOptions
+} from '../../src/interpreter/evaluator.js';
 
-const run = (source: string) => executeProgram(parseSource(source));
+const run = (source: string, options?: ExecutionOptions) =>
+  executeProgram(parseSource(source), options);
 
 describe('evaluator', () => {
   it('executes sequential statements with variables and print', () => {
@@ -57,6 +62,51 @@ describe('evaluator', () => {
     expect(result.halted).toBe('STOP');
     expect(result.outputs).toEqual([]);
     expect(result.variables).toMatchObject({ X: 10 });
+  });
+
+  it('executes GOSUB/RETURN and resumes at the correct statement', () => {
+    const program = `
+10 PRINT "START"
+20 GOSUB 100
+30 PRINT "END"
+40 STOP
+100 PRINT "SUB"
+110 RETURN
+`;
+    const result = run(program.trim());
+    expect(result.outputs).toEqual(['START', 'SUB', 'END']);
+    expect(result.halted).toBe('STOP');
+  });
+
+  it('supports inline GOSUB with statements following on same line', () => {
+    const program = 'PRINT "A": GOSUB 100: PRINT "B"\nSTOP\n100 PRINT "SUB"\nRETURN';
+    const result = run(program);
+    expect(result.outputs).toEqual(['A', 'SUB', 'B']);
+  });
+
+  it('handles nested GOSUB invocations with stacked returns', () => {
+    const program = `
+10 GOSUB 100
+20 PRINT "DONE"
+30 STOP
+100 PRINT "L1"
+110 GOSUB 200
+120 PRINT "L1-POST"
+130 RETURN
+200 PRINT "L2"
+210 RETURN
+`;
+    const result = run(program.trim());
+    expect(result.outputs).toEqual(['L1', 'L2', 'L1-POST', 'DONE']);
+  });
+
+  it('throws when RETURN appears without matching GOSUB', () => {
+    expect(() => run('RETURN')).toThrow(RuntimeError);
+  });
+
+  it('enforces maximum call depth when provided', () => {
+    const recursive = '10 GOSUB 10';
+    expect(() => run(recursive, { maxCallDepth: 8 })).toThrow(RuntimeError);
   });
 
   it('executes FOR/NEXT loops with implicit body on next line', () => {
