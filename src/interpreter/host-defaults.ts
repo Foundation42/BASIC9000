@@ -22,6 +22,7 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   env.register('FS', createFileSystemNamespace());
   env.register('HTTP', createHttpNamespace());
   env.register('WS', createWebSocketNamespace());
+  env.register('JSON', createJsonNamespace());
   return env;
 }
 
@@ -38,12 +39,22 @@ function createSystemNamespace() {
     JOINPATH: createFunction('SYS.JOINPATH', (args) => {
       const segments = args.map((segment, index) => requireStringValue('SYS.JOINPATH', segment, index));
       return path.join(...segments);
+    }),
+    CWD: createFunction('SYS.CWD', () => process.cwd()),
+    HOME: createFunction('SYS.HOME', () => os.homedir()),
+    CPUCOUNT: createFunction('SYS.CPUCOUNT', () => os.cpus()?.length ?? 0),
+    SLEEP: createFunction('SYS.SLEEP', async (args) => {
+      const duration = Math.max(0, requireNumberArg('SYS.SLEEP', args, 0));
+      await new Promise((resolve) => setTimeout(resolve, duration));
+      return duration;
     })
   });
 }
 
 function createMathNamespace() {
   return createNamespace('MATH', {
+    PI: createFunction('MATH.PI', () => Math.PI),
+    E: createFunction('MATH.E', () => Math.E),
     ABS: createFunction('MATH.ABS', (args) => Math.abs(requireNumberArg('MATH.ABS', args, 0))),
     SIN: createFunction('MATH.SIN', (args) => Math.sin(requireNumberArg('MATH.SIN', args, 0))),
     COS: createFunction('MATH.COS', (args) => Math.cos(requireNumberArg('MATH.COS', args, 0))),
@@ -54,7 +65,27 @@ function createMathNamespace() {
     ),
     FLOOR: createFunction('MATH.FLOOR', (args) => Math.floor(requireNumberArg('MATH.FLOOR', args, 0))),
     CEIL: createFunction('MATH.CEIL', (args) => Math.ceil(requireNumberArg('MATH.CEIL', args, 0))),
-    ROUND: createFunction('MATH.ROUND', (args) => Math.round(requireNumberArg('MATH.ROUND', args, 0)))
+    ROUND: createFunction('MATH.ROUND', (args) => Math.round(requireNumberArg('MATH.ROUND', args, 0))),
+    LOG: createFunction('MATH.LOG', (args) => Math.log(requireNumberArg('MATH.LOG', args, 0))),
+    LOG10: createFunction('MATH.LOG10', (args) => Math.log10(requireNumberArg('MATH.LOG10', args, 0))),
+    EXP: createFunction('MATH.EXP', (args) => Math.exp(requireNumberArg('MATH.EXP', args, 0))),
+    MIN: createFunction('MATH.MIN', (args) =>
+      Math.min(requireNumberArg('MATH.MIN', args, 0), requireNumberArg('MATH.MIN', args, 1))
+    ),
+    MAX: createFunction('MATH.MAX', (args) =>
+      Math.max(requireNumberArg('MATH.MAX', args, 0), requireNumberArg('MATH.MAX', args, 1))
+    ),
+    CLAMP: createFunction('MATH.CLAMP', (args) => {
+      const value = requireNumberArg('MATH.CLAMP', args, 0);
+      const min = requireNumberArg('MATH.CLAMP', args, 1);
+      const max = requireNumberArg('MATH.CLAMP', args, 2);
+      if (max < min) {
+        throw new Error('MATH.CLAMP expects max >= min');
+      }
+      return Math.min(Math.max(value, min), max);
+    }),
+    DEG2RAD: createFunction('MATH.DEG2RAD', (args) => requireNumberArg('MATH.DEG2RAD', args, 0) * (Math.PI / 180)),
+    RAD2DEG: createFunction('MATH.RAD2DEG', (args) => requireNumberArg('MATH.RAD2DEG', args, 0) * (180 / Math.PI))
   });
 }
 
@@ -68,6 +99,14 @@ function createRandomNamespace() {
         throw new Error('RANDOM.RANGE expects max >= min');
       }
       return min + Math.random() * (max - min);
+    }),
+    INT: createFunction('RANDOM.INT', (args) => {
+      const min = Math.floor(requireNumberArg('RANDOM.INT', args, 0));
+      const max = Math.floor(requireNumberArg('RANDOM.INT', args, 1));
+      if (max < min) {
+        throw new Error('RANDOM.INT expects max >= min');
+      }
+      return Math.floor(Math.random() * (max - min + 1)) + min;
     })
   });
 }
@@ -78,7 +117,45 @@ function createStringNamespace() {
     LOWER: createFunction('STR.LOWER', (args) => requireStringArg('STR.LOWER', args, 0).toLowerCase()),
     TRIM: createFunction('STR.TRIM', (args) => requireStringArg('STR.TRIM', args, 0).trim()),
     LEN: createFunction('STR.LEN', (args) => requireStringArg('STR.LEN', args, 0).length),
-    CONCAT: createFunction('STR.CONCAT', (args) => args.map((value, index) => requireStringValue('STR.CONCAT', value, index)).join(''))
+    CONCAT: createFunction('STR.CONCAT', (args) => args.map((value, index) => requireStringValue('STR.CONCAT', value, index)).join('')),
+    LEFT: createFunction('STR.LEFT', (args) => {
+      const text = requireStringArg('STR.LEFT', args, 0);
+      const count = Math.max(0, Math.floor(requireNumberArg('STR.LEFT', args, 1)));
+      return text.substring(0, count);
+    }),
+    RIGHT: createFunction('STR.RIGHT', (args) => {
+      const text = requireStringArg('STR.RIGHT', args, 0);
+      const count = Math.max(0, Math.floor(requireNumberArg('STR.RIGHT', args, 1)));
+      if (count === 0) {
+        return '';
+      }
+      return text.substring(Math.max(0, text.length - count));
+    }),
+    MID: createFunction('STR.MID', (args) => {
+      const text = requireStringArg('STR.MID', args, 0);
+      const start = Math.max(1, Math.floor(requireNumberArg('STR.MID', args, 1)));
+      const length = args.length >= 3 ? Math.max(0, Math.floor(requireNumberArg('STR.MID', args, 2))) : text.length;
+      return text.substring(start - 1, start - 1 + length);
+    }),
+    REPLACE: createFunction('STR.REPLACE', (args) => {
+      const text = requireStringArg('STR.REPLACE', args, 0);
+      const search = requireStringArg('STR.REPLACE', args, 1);
+      const replacement = requireStringArg('STR.REPLACE', args, 2);
+      if (search === '') {
+        return text;
+      }
+      return text.split(search).join(replacement);
+    }),
+    STARTSWITH: createFunction('STR.STARTSWITH', (args) =>
+      toBooleanNumeric(requireStringArg('STR.STARTSWITH', args, 0).startsWith(requireStringArg('STR.STARTSWITH', args, 1)))
+    ),
+    ENDSWITH: createFunction('STR.ENDSWITH', (args) =>
+      toBooleanNumeric(requireStringArg('STR.ENDSWITH', args, 0).endsWith(requireStringArg('STR.ENDSWITH', args, 1)))
+    ),
+    CONTAINS: createFunction('STR.CONTAINS', (args) =>
+      toBooleanNumeric(requireStringArg('STR.CONTAINS', args, 0).includes(requireStringArg('STR.CONTAINS', args, 1)))
+    ),
+    REVERSE: createFunction('STR.REVERSE', (args) => requireStringArg('STR.REVERSE', args, 0).split('').reverse().join(''))
   });
 }
 
@@ -105,6 +182,34 @@ function createFileSystemNamespace() {
         ISFILE: createFunction('FS.STAT.ISFILE', () => (stats.isFile() ? -1 : 0)),
         ISDIR: createFunction('FS.STAT.ISDIR', () => (stats.isDirectory() ? -1 : 0))
       });
+    }),
+    DELETE: createFunction('FS.DELETE', (args) => {
+      const filePath = requireStringArg('FS.DELETE', args, 0);
+      if (fs.existsSync(filePath)) {
+        fs.rmSync(filePath, { force: true, recursive: false });
+      }
+      return 0;
+    }),
+    APPEND: createFunction('FS.APPEND', (args) => {
+      const filePath = requireStringArg('FS.APPEND', args, 0);
+      const data = requireStringArg('FS.APPEND', args, 1);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.appendFileSync(filePath, data, 'utf8');
+      return data.length;
+    }),
+    LIST: createFunction('FS.LIST', (args) => {
+      const dirPath = requireStringArg('FS.LIST', args, 0);
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      return entries
+        .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
+        .join('\n');
+    }),
+    COPY: createFunction('FS.COPY', (args) => {
+      const from = requireStringArg('FS.COPY', args, 0);
+      const to = requireStringArg('FS.COPY', args, 1);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+      return 0;
     })
   });
 }
@@ -160,6 +265,114 @@ function createWebSocketNamespace() {
       return 0;
     })
   });
+}
+
+function createJsonNamespace() {
+  return createNamespace('JSON', {
+    PARSE: createFunction('JSON.PARSE', (args) => {
+      const text = requireStringArg('JSON.PARSE', args, 0);
+      const handle = JsonHandle.parse(text);
+      jsonHandles.set(handle.value, handle);
+      return handle.value;
+    }),
+    GET: createFunction('JSON.GET', (args) => {
+      const handle = requireJsonHandle('JSON.GET', args, 0);
+      const path = args.length >= 2 ? requireStringArg('JSON.GET', args, 1) : '';
+      return handle.get(path);
+    }),
+    STRINGIFY: createFunction('JSON.STRINGIFY', (args) => {
+      const handle = requireJsonHandle('JSON.STRINGIFY', args, 0);
+      const path = args.length >= 2 ? requireStringArg('JSON.STRINGIFY', args, 1) : '';
+      return handle.stringify(path);
+    }),
+    TYPE: createFunction('JSON.TYPE', (args) => {
+      const handle = requireJsonHandle('JSON.TYPE', args, 0);
+      const path = args.length >= 2 ? requireStringArg('JSON.TYPE', args, 1) : '';
+      return handle.type(path);
+    })
+  });
+}
+
+class JsonHandle {
+  public static parse(text: string): JsonHandle {
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`JSON.PARSE failed: ${(error as Error).message}`);
+    }
+    return new JsonHandle(value);
+  }
+
+  public readonly value: HostNamespaceValue;
+
+  private constructor(private readonly root: unknown) {
+    const self = this;
+    this.value = createNamespace('JSON.VALUE', {
+      GET: createFunction('JSON.VALUE.GET', (args) => {
+        const path = args.length >= 1 ? requireStringArg('JSON.VALUE.GET', args, 0) : '';
+        return self.get(path);
+      }),
+      STRINGIFY: createFunction('JSON.VALUE.STRINGIFY', (args) => {
+        const path = args.length >= 1 ? requireStringArg('JSON.VALUE.STRINGIFY', args, 0) : '';
+        return self.stringify(path);
+      }),
+      TYPE: createFunction('JSON.VALUE.TYPE', (args) => {
+        const path = args.length >= 1 ? requireStringArg('JSON.VALUE.TYPE', args, 0) : '';
+        return self.type(path);
+      })
+    });
+  }
+
+  public get(path: string): RuntimeValue {
+    const node = this.resolve(path);
+    return jsonValueToRuntime(node);
+  }
+
+  public stringify(path: string): string {
+    const node = this.resolve(path);
+    if (node === undefined) {
+      return '';
+    }
+    if (typeof node === 'string') {
+      return JSON.stringify(node);
+    }
+    return JSON.stringify(node);
+  }
+
+  public type(path: string): string {
+    const node = this.resolve(path);
+    if (node === null) {
+      return 'null';
+    }
+    if (Array.isArray(node)) {
+      return 'array';
+    }
+    return typeof node;
+  }
+
+  private resolve(path: string): unknown {
+    if (!path) {
+      return this.root;
+    }
+    const tokens = parseJsonPath(path);
+    let current: unknown = this.root;
+    for (const token of tokens) {
+      if (typeof token === 'number') {
+        if (!Array.isArray(current)) {
+          return undefined;
+        }
+        current = current[token];
+      } else {
+        if (current && typeof current === 'object' && token in (current as Record<string, unknown>)) {
+          current = (current as Record<string, unknown>)[token];
+        } else {
+          return undefined;
+        }
+      }
+    }
+    return current;
+  }
 }
 
 class WebSocketClientHandle {
@@ -329,6 +542,26 @@ function requireConnection(functionName: string, args: RuntimeValue[], index: nu
 }
 
 const websocketConnections = new WeakMap<HostNamespaceValue, WebSocketClientHandle>();
+const jsonHandles = new WeakMap<HostNamespaceValue, JsonHandle>();
+
+function requireJsonHandle(functionName: string, args: RuntimeValue[], index: number): JsonHandle {
+  if (index >= args.length) {
+    throw new Error(`${functionName} expects argument #${index + 1}`);
+  }
+  const value = args[index]!;
+  if (isHostNamespace(value)) {
+    const handle = jsonHandles.get(value);
+    if (handle) {
+      return handle;
+    }
+  }
+  if (typeof value === 'string') {
+    const handle = JsonHandle.parse(value);
+    jsonHandles.set(handle.value, handle);
+    return handle;
+  }
+  throw new Error(`${functionName} argument #${index + 1} must be a JSON handle or JSON string`);
+}
 
 function requireNumberArg(functionName: string, args: RuntimeValue[], index: number): number {
   if (index >= args.length) {
@@ -365,4 +598,41 @@ function requireStringValue(functionName: string, value: RuntimeValue, index: nu
     return value.toString();
   }
   throw new Error(`${functionName} argument #${index + 1} must be string`);
+}
+
+function toBooleanNumeric(input: boolean): number {
+  return input ? -1 : 0;
+}
+
+function jsonValueToRuntime(value: unknown): RuntimeValue {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'boolean') {
+    return value ? -1 : 0;
+  }
+  return JSON.stringify(value);
+}
+
+function parseJsonPath(path: string): Array<string | number> {
+  const tokens: Array<string | number> = [];
+  if (!path) {
+    return tokens;
+  }
+  const regex = /([^\.\[\]]+)|\[(\d+)\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(path)) !== null) {
+    if (match[1]) {
+      tokens.push(match[1]);
+    } else if (match[2]) {
+      tokens.push(Number(match[2]));
+    }
+  }
+  return tokens;
 }

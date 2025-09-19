@@ -217,6 +217,32 @@ PRINT "END"`;
     expect(result.outputs[1]).toBe('-1');
   });
 
+  it('supports extended math utilities', async () => {
+    const result = await run(
+      'PRINT MATH.PI()\nPRINT MATH.CLAMP(12, 0, 5)\nPRINT MATH.RAD2DEG(MATH.DEG2RAD(90))'
+    );
+    expect(Number(result.outputs[0])).toBeCloseTo(Math.PI);
+    expect(result.outputs[1]).toBe('5');
+    expect(Number(result.outputs[2])).toBeCloseTo(90);
+  });
+
+  it('supports extended string utilities', async () => {
+    const result = await run(
+      'PRINT STR.LEFT("RETRO", 3)\nPRINT STR.MID("RETRO", 2, 2)\nPRINT STR.RIGHT("RETRO", 2)\nPRINT STR.REVERSE("ABCD")\nPRINT STR.CONTAINS("RETRO", "TR")'
+    );
+    expect(result.outputs).toEqual(['RET', 'ET', 'RO', 'DCBA', '-1']);
+  });
+
+  it('supports SYS.SLEEP and RANDOM.INT', async () => {
+    const result = await run('SYS.SLEEP(10)\nFOR I = 1 TO 3\nPRINT RANDOM.INT(5,10)\nNEXT I');
+    expect(result.variables).toHaveProperty('I');
+    result.outputs.slice(0).forEach((value) => {
+      const num = Number(value);
+      expect(num).toBeGreaterThanOrEqual(5);
+      expect(num).toBeLessThanOrEqual(10);
+    });
+  });
+
   it('reads and writes files through FS namespace', async () => {
     const tmpDir = os.tmpdir();
     const filePath = path.join(tmpDir, `basic9000-spec-${Date.now()}.txt`);
@@ -235,6 +261,28 @@ PRINT FS.READ(P$)
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
+    }
+  });
+
+  it('supports deleting and listing files', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'basic9000-list-'));
+    const fileA = path.join(baseDir, 'a.txt');
+    const fileB = path.join(baseDir, 'b.txt');
+    fs.writeFileSync(fileA, 'A');
+    fs.writeFileSync(fileB, 'B');
+    const escapedDir = baseDir.replace(/"/g, '""');
+    const escapedA = fileA.replace(/"/g, '""');
+    const program = `
+PRINT FS.LIST("${escapedDir}")
+FS.DELETE("${escapedA}")
+PRINT FS.LIST("${escapedDir}")
+`;
+    try {
+      const result = await run(program.trim());
+      expect(result.outputs[0]?.split('\n').sort()).toEqual(['a.txt', 'b.txt']);
+      expect(result.outputs[1]?.split('\n').sort()).toEqual(['b.txt']);
+    } finally {
+      fs.rmSync(baseDir, { recursive: true, force: true });
     }
   });
 
@@ -257,6 +305,19 @@ PRINT FS.READ(P$)
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  it('parses JSON documents and extracts values', async () => {
+    const program = `
+LET J = JSON.PARSE("{\"temp\":{\"value\":42,\"status\":\"ok\"}}")
+PRINT JSON.GET(J, "temp.value")
+PRINT JSON.TYPE(J, "temp")
+PRINT JSON.STRINGIFY(J, "temp")
+`;
+    const result = await run(program.trim());
+    expect(result.outputs[0]).toBe('42');
+    expect(result.outputs[1]).toBe('object');
+    expect(result.outputs[2]).toBe(JSON.stringify({ value: 42, status: 'ok' }));
   });
 
   it('establishes websocket connection and exchanges messages', async () => {
