@@ -147,6 +147,9 @@ export function tokenize(source: string, options: TokenizerOptions = {}): Token[
 
   while (!isAtEnd(cursor)) {
     const char = peek(cursor);
+    if (char === undefined) {
+      break;
+    }
 
     if (char === '\n') {
       advance(cursor);
@@ -215,9 +218,9 @@ export function tokenize(source: string, options: TokenizerOptions = {}): Token[
       advance(cursor);
 
       if (char === '<' || char === '>') {
-        const maybeEqual = peek(cursor);
+        const maybeEqual = peek(cursor) ?? '';
         const combined = char + maybeEqual;
-        if (MULTI_CHAR_OPERATORS.has(combined)) {
+        if (maybeEqual && MULTI_CHAR_OPERATORS.has(combined)) {
           advance(cursor);
           tokens.push(createToken(TokenType.Operator, combined, undefined, startLine, startColumn));
           continue;
@@ -274,8 +277,12 @@ function scanNumber(cursor: Cursor): Token {
   const startColumn = cursor.column;
   let lexeme = '';
 
-  while (isDigit(peek(cursor))) {
-    lexeme += peek(cursor);
+  while (true) {
+    const digit = peek(cursor);
+    if (!isDigit(digit)) {
+      break;
+    }
+    lexeme += digit;
     advance(cursor);
   }
 
@@ -288,8 +295,8 @@ function scanNumber(cursor: Cursor): Token {
     }
   }
 
-  if (/[eEdD]/.test(peek(cursor))) {
-    const exponentChar = peek(cursor);
+  const exponentChar = peek(cursor);
+  if (exponentChar && /[eEdD]/.test(exponentChar)) {
     const next = peekNext(cursor);
     if (next && (isDigit(next) || next === '+' || next === '-')) {
       lexeme += exponentChar;

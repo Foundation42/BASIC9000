@@ -1,9 +1,9 @@
 import type {
+  ArrayLiteralNode,
   AssignmentStatementNode,
   BinaryExpressionNode,
-  EndStatementNode,
+  CallExpressionNode,
   ExpressionNode,
-  ExpressionStatementNode,
   ForStatementNode,
   GosubStatementNode,
   GotoStatementNode,
@@ -13,14 +13,10 @@ import type {
   LineNode,
   MemberExpressionNode,
   NextStatementNode,
-  NumberLiteralNode,
-  ArrayLiteralNode,
   PrintStatementNode,
   ProgramNode,
   ReturnStatementNode,
-  StopStatementNode,
   StatementNode,
-  StringLiteralNode,
   UnaryExpressionNode
 } from './ast.js';
 import {
@@ -223,7 +219,7 @@ class Evaluator {
     line: LineNode,
     lineIndex: number,
     startStatementIndex: number
-  ): StatementSignal | undefined {
+  ): Promise<StatementSignal | undefined> {
     for (let i = startStatementIndex; i < line.statements.length; i += 1) {
       const statement = line.statements[i]!;
       this.ensureWithinStepBudget(statement.token);
@@ -469,10 +465,6 @@ class Evaluator {
     if (typeof maxSteps === 'number' && this.stepCount > maxSteps) {
       throw new RuntimeError('Exceeded maximum execution steps', token);
     }
-  }
-
-  private unsupportedStatement(message: string, token: Token): StatementSignal {
-    throw new RuntimeError(message, token);
   }
 
   private buildLoopBindings(): void {

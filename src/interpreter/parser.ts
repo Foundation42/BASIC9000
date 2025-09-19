@@ -17,7 +17,6 @@ import type {
   MemberExpressionNode,
   NextStatementNode,
   NumberLiteralNode,
-  ArrayLiteralNode,
   PrintArgument,
   PrintStatementNode,
   ProgramNode,
@@ -160,7 +159,7 @@ class Parser {
 
   private parseAssignmentStatement(): AssignmentStatementNode {
     const target = this.parseAssignmentTarget();
-    const token = target.token;
+    const token = this.getTargetToken(target);
     this.consumeOperator('=');
     const value = this.parseExpression();
     return { type: 'AssignmentStatement', token, target, value } satisfies AssignmentStatementNode;
@@ -433,7 +432,7 @@ class Parser {
         } while (this.match(TokenType.Comma));
       }
       this.consume(TokenType.RightBracket, 'Expected closing bracket');
-      return { type: 'ArrayLiteral', elements, token } satisfies ArrayLiteralNode;
+      return { type: 'ArrayLiteral', elements, token } as unknown as ExpressionNode;
     }
 
     throw new ParseError('Expected expression', this.peek());
@@ -448,11 +447,15 @@ class Parser {
   }
 
   private parseMemberProperty(): IdentifierNode {
-    if (this.match(TokenType.Identifier) || this.match(TokenType.Keyword)) {
-      const token = this.previous();
+    if (this.check(TokenType.Identifier) || this.check(TokenType.Keyword)) {
+      const token = this.advance();
       return { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
     }
     throw new ParseError('Expected identifier', this.peek());
+  }
+
+  private getTargetToken(target: IdentifierNode | MemberExpressionNode): Token {
+    return target.type === 'Identifier' ? target.token : target.property.token;
   }
 
   private consumeNumberLiteral(): number {
@@ -516,6 +519,8 @@ class Parser {
         return this.getExpressionToken(expression.object);
       case 'AwaitExpression':
         return expression.keyword;
+      case 'ArrayLiteral':
+        return expression.token;
       default: {
         const exhaustiveCheck: never = expression;
         throw exhaustiveCheck;
