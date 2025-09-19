@@ -25,6 +25,16 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - 🎨 **Terminal Control**: Clear screen, status bar, overlays
 - 🤖 **AI Integration**: OpenAI, Anthropic, and OpenAI-compatible LLMs
 
+## 🔐 Secure Configuration
+
+BASIC9000 includes comprehensive secrets management - no more API keys in code!
+
+1. Copy the example config: `cp .basic9000.example.json .basic9000.json`
+2. Add your API keys to the config file
+3. Your keys are automatically loaded and available to all APIs!
+
+See [Secrets Management Guide](docs/secrets-management.md) for details.
+
 ## 🚀 Quick Start
 
 ### Installation
