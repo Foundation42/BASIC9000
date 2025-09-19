@@ -2,7 +2,7 @@ const PROMPT = 'READY> ';
 const banner = [
   'BASIC9000 Interactive Terminal',
   '--------------------------------',
-  'Type HELP for ideas. Press Ctrl+L to clear, Ctrl+R to reset session.'
+  'Type HELP for ideas. Ctrl+L: clear, Ctrl+R: reset, Ctrl+H: toggle highlighting'
 ];
 
 const term = new Terminal({
@@ -18,6 +18,9 @@ const term = new Terminal({
     selectionBackground: '#7bff78'
   }
 });
+
+// Initialize syntax highlighter
+const highlighter = new SyntaxHighlighter(true);
 
 const fitAddon = new FitAddon.FitAddon();
 const linksAddon = new WebLinksAddon.WebLinksAddon((_, url) => {
@@ -104,7 +107,9 @@ function showPrompt() {
 }
 
 function renderInput() {
-  term.write(`\x1b[2K\r${PROMPT}${buffer}`);
+  // Clear the line and render with syntax highlighting
+  const highlighted = highlighter.highlightLine(buffer);
+  term.write(`\x1b[2K\r${PROMPT}${highlighted}`);
 }
 
 function clearScreen() {
@@ -163,7 +168,9 @@ async function executeBuffer() {
               // Skip empty last line from split
               return;
             }
-            term.writeln(l);
+            // Apply syntax highlighting to output
+            const highlighted = highlighter.highlightLine(l);
+            term.writeln(highlighted);
           });
         });
       }
@@ -207,7 +214,7 @@ function handleHistory(direction) {
     return;
   }
   buffer = history[historyIndex] ?? '';
-  renderInput();
+  renderInput(); // This already uses the highlighter
 }
 
 async function resetSession() {
@@ -238,10 +245,15 @@ term.onData(async (data) => {
     case '\u0012': // Ctrl+R
       await resetSession();
       return;
+    case '\u0008': // Ctrl+H
+      const enabled = highlighter.toggle();
+      term.writeln(`\r\n(Syntax highlighting ${enabled ? 'enabled' : 'disabled'})`);
+      showPrompt();
+      return;
     case '\u007f': // Backspace
       if (buffer.length > 0) {
         buffer = buffer.slice(0, -1);
-        term.write('\b \b');
+        renderInput();
       }
       return;
     case '\u001b[A':
@@ -261,7 +273,7 @@ term.onData(async (data) => {
 
   if (data >= ' ' && data <= '~') {
     buffer += data;
-    term.write(data);
+    renderInput();
   }
 });
 
