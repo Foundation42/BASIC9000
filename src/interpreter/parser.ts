@@ -17,6 +17,7 @@ import type {
   MemberExpressionNode,
   NextStatementNode,
   NumberLiteralNode,
+  ArrayLiteralNode,
   PrintArgument,
   PrintStatementNode,
   ProgramNode,
@@ -421,6 +422,18 @@ class Parser {
       const expr = this.parseExpression();
       this.consume(TokenType.RightParen, 'Expected closing parenthesis');
       return expr;
+    }
+
+    if (this.match(TokenType.LeftBracket)) {
+      const token = this.previous();
+      const elements: ExpressionNode[] = [];
+      if (!this.check(TokenType.RightBracket)) {
+        do {
+          elements.push(this.parseExpression());
+        } while (this.match(TokenType.Comma));
+      }
+      this.consume(TokenType.RightBracket, 'Expected closing bracket');
+      return { type: 'ArrayLiteral', elements, token } satisfies ArrayLiteralNode;
     }
 
     throw new ParseError('Expected expression', this.peek());

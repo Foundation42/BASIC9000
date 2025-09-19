@@ -20,6 +20,8 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   env.register('RANDOM', createRandomNamespace());
   env.register('STR', createStringNamespace());
   env.register('FS', createFileSystemNamespace());
+  env.register('ARRAY', createArrayNamespace());
+  env.register('TIME', createTimeNamespace());
   env.register('HTTP', createHttpNamespace());
   env.register('WS', createWebSocketNamespace());
   env.register('JSON', createJsonNamespace());
@@ -118,6 +120,12 @@ function createStringNamespace() {
     TRIM: createFunction('STR.TRIM', (args) => requireStringArg('STR.TRIM', args, 0).trim()),
     LEN: createFunction('STR.LEN', (args) => requireStringArg('STR.LEN', args, 0).length),
     CONCAT: createFunction('STR.CONCAT', (args) => args.map((value, index) => requireStringValue('STR.CONCAT', value, index)).join('')),
+    FIND: createFunction('STR.FIND', (args) => {
+      const text = requireStringArg('STR.FIND', args, 0);
+      const search = requireStringArg('STR.FIND', args, 1);
+      const start = args.length >= 3 ? Math.max(0, Math.floor(requireNumberArg('STR.FIND', args, 2))) : 0;
+      return text.indexOf(search, start);
+    }),
     LEFT: createFunction('STR.LEFT', (args) => {
       const text = requireStringArg('STR.LEFT', args, 0);
       const count = Math.max(0, Math.floor(requireNumberArg('STR.LEFT', args, 1)));
@@ -239,6 +247,49 @@ function createHttpNamespace() {
   });
 }
 
+function createArrayNamespace() {
+  return createNamespace('ARRAY', {
+    SORT: createFunction('ARRAY.SORT', (args) => {
+      const array = [...requireArrayArg('ARRAY.SORT', args, 0)];
+      const order = args.length >= 2 ? requireStringArg('ARRAY.SORT', args, 1).toUpperCase() : 'ASC';
+      const comparator = buildArrayComparator(array);
+      array.sort(comparator);
+      if (order === 'DESC') {
+        array.reverse();
+      }
+      return array;
+    }),
+    REVERSE: createFunction('ARRAY.REVERSE', (args) => [...requireArrayArg('ARRAY.REVERSE', args, 0)].reverse()),
+    PUSH: createFunction('ARRAY.PUSH', (args) => {
+      const array = requireArrayArg('ARRAY.PUSH', args, 0);
+      return [...array, args[1] ?? ''];
+    }),
+    JOIN: createFunction('ARRAY.JOIN', (args) => {
+      const array = requireArrayArg('ARRAY.JOIN', args, 0);
+      const delimiter = args.length >= 2 ? requireStringArg('ARRAY.JOIN', args, 1) : ',';
+      return array.map(arrayValueToString).join(delimiter);
+    }),
+    LENGTH: createFunction('ARRAY.LENGTH', (args) => requireArrayArg('ARRAY.LENGTH', args, 0).length)
+  });
+}
+
+function createTimeNamespace() {
+  return createNamespace('TIME', {
+    NOW: createFunction('TIME.NOW', () => new Date().toISOString()),
+    FROM: createFunction('TIME.FROM', (args) => {
+      const value = args[0];
+      const date = parseTimeValue('TIME.FROM', value);
+      return date.toISOString();
+    }),
+    FORMAT: createFunction('TIME.FORMAT', (args) => {
+      const value = args[0];
+      const pattern = requireStringArg('TIME.FORMAT', args, 1);
+      const date = parseTimeValue('TIME.FORMAT', value);
+      return formatDate(date, pattern);
+    })
+  });
+}
+
 function createWebSocketNamespace() {
   return createNamespace('WS', {
     CONNECT: createFunction('WS.CONNECT', async (args) => {
@@ -301,6 +352,10 @@ class JsonHandle {
     } catch (error) {
       throw new Error(`JSON.PARSE failed: ${(error as Error).message}`);
     }
+    return new JsonHandle(value);
+  }
+
+  public static fromValue(value: unknown): JsonHandle {
     return new JsonHandle(value);
   }
 
@@ -604,6 +659,41 @@ function toBooleanNumeric(input: boolean): number {
   return input ? -1 : 0;
 }
 
+function requireArrayArg(functionName: string, args: RuntimeValue[], index: number): RuntimeValue[] {
+  if (index >= args.length) {
+    throw new Error(`${functionName} expects argument #${index + 1}`);
+  }
+  const value = args[index]!;
+  if (Array.isArray(value)) {
+    return value;
+  }
+  throw new Error(`${functionName} argument #${index + 1} must be an array`);
+}
+
+function buildArrayComparator(sample: RuntimeValue[]): (a: RuntimeValue, b: RuntimeValue) => number {
+  const numeric = sample.every((item) => typeof item === 'number');
+  if (numeric) {
+    return (a, b) => (Number(a) as number) - (Number(b) as number);
+  }
+  return (a, b) => arrayValueToString(a).localeCompare(arrayValueToString(b));
+}
+
+function arrayValueToString(value: RuntimeValue): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value.toString();
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => arrayValueToString(item)).join(',')}]`;
+  }
+  if (isHostNamespace(value)) {
+    return `[Namespace ${value.name}]`;
+  }
+  return String(value);
+}
+
 function jsonValueToRuntime(value: unknown): RuntimeValue {
   if (value === null || value === undefined) {
     return '';
@@ -617,7 +707,12 @@ function jsonValueToRuntime(value: unknown): RuntimeValue {
   if (typeof value === 'boolean') {
     return value ? -1 : 0;
   }
-  return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => jsonValueToRuntime(item));
+  }
+  const handle = JsonHandle.fromValue(value);
+  jsonHandles.set(handle.value, handle);
+  return handle.value;
 }
 
 function parseJsonPath(path: string): Array<string | number> {
@@ -635,4 +730,37 @@ function parseJsonPath(path: string): Array<string | number> {
     }
   }
   return tokens;
+}
+
+function parseTimeValue(functionName: string, value: RuntimeValue): Date {
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`${functionName} received invalid timestamp`);
+    }
+    return date;
+  }
+  if (typeof value === 'string') {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`${functionName} received invalid time string`);
+    }
+    return date;
+  }
+  if (Array.isArray(value)) {
+    throw new Error(`${functionName} does not accept arrays`);
+  }
+  throw new Error(`${functionName} received unsupported time value`);
+}
+
+function formatDate(date: Date, pattern: string): string {
+  const replacements: Record<string, string> = {
+    YYYY: date.getUTCFullYear().toString().padStart(4, '0'),
+    MM: (date.getUTCMonth() + 1).toString().padStart(2, '0'),
+    DD: date.getUTCDate().toString().padStart(2, '0'),
+    HH: date.getUTCHours().toString().padStart(2, '0'),
+    mm: date.getUTCMinutes().toString().padStart(2, '0'),
+    ss: date.getUTCSeconds().toString().padStart(2, '0')
+  };
+  return pattern.replace(/YYYY|MM|DD|HH|mm|ss/g, (match) => replacements[match] ?? match);
 }

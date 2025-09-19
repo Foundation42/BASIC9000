@@ -14,6 +14,7 @@ import type {
   MemberExpressionNode,
   NextStatementNode,
   NumberLiteralNode,
+  ArrayLiteralNode,
   PrintStatementNode,
   ProgramNode,
   ReturnStatementNode,
@@ -317,6 +318,8 @@ class Evaluator {
         return expression.value;
       case 'Identifier':
         return this.resolveIdentifier(expression);
+      case 'ArrayLiteral':
+        return this.evaluateArrayLiteral(expression);
       case 'UnaryExpression':
         return this.evaluateUnary(expression);
       case 'BinaryExpression':
@@ -355,6 +358,14 @@ class Evaluator {
     const callee = await this.evaluateExpression(expression.callee);
     const args = await Promise.all(expression.args.map((arg) => this.evaluateExpression(arg)));
     return this.invokeCallable(callee, args, expression.closingParen);
+  }
+
+  private async evaluateArrayLiteral(expression: ArrayLiteralNode): Promise<RuntimeValue> {
+    const elements: RuntimeValue[] = [];
+    for (const element of expression.elements) {
+      elements.push(await this.evaluateExpression(element));
+    }
+    return elements;
   }
 
   private async evaluateUnary(expression: UnaryExpressionNode): Promise<RuntimeValue> {
@@ -731,6 +742,9 @@ function coerceValueForIdentifier(name: string, value: RuntimeValue, token: Toke
   if (typeof value === 'string') {
     return toNumber(value, token);
   }
+  if (Array.isArray(value)) {
+    return value;
+  }
   return value;
 }
 
@@ -741,6 +755,9 @@ function runtimeValueToString(value: RuntimeValue): string {
   if (typeof value === 'string') {
     return value;
   }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => runtimeValueToString(item)).join(',')}]`;
+  }
   return hostValueToString(value);
 }
 
@@ -749,6 +766,9 @@ function truthy(value: RuntimeValue): boolean {
     return value !== 0;
   }
   if (typeof value === 'string') {
+    return value.length > 0;
+  }
+  if (Array.isArray(value)) {
     return value.length > 0;
   }
   return true;
@@ -765,6 +785,9 @@ function toStringValue(value: RuntimeValue): string {
   if (typeof value === 'number') {
     return value.toString();
   }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => toStringValue(item)).join(',')}]`;
+  }
   return hostValueToString(value);
 }
 
@@ -778,6 +801,9 @@ function toNumber(value: RuntimeValue, token: Token): number {
       throw new RuntimeError(`Cannot convert '${value}' to number`, token);
     }
     return parsed;
+  }
+  if (Array.isArray(value)) {
+    throw new RuntimeError('Cannot convert array to number', token);
   }
   throw new RuntimeError('Cannot convert host value to number', token);
 }

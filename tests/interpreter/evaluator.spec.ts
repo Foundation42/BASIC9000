@@ -228,9 +228,9 @@ PRINT "END"`;
 
   it('supports extended string utilities', async () => {
     const result = await run(
-      'PRINT STR.LEFT("RETRO", 3)\nPRINT STR.MID("RETRO", 2, 2)\nPRINT STR.RIGHT("RETRO", 2)\nPRINT STR.REVERSE("ABCD")\nPRINT STR.CONTAINS("RETRO", "TR")'
+      'PRINT STR.LEFT("RETRO", 3)\nPRINT STR.MID("RETRO", 2, 2)\nPRINT STR.RIGHT("RETRO", 2)\nPRINT STR.REVERSE("ABCD")\nPRINT STR.CONTAINS("RETRO", "TR")\nPRINT STR.FIND("programming", "gram")'
     );
-    expect(result.outputs).toEqual(['RET', 'ET', 'RO', 'DCBA', '-1']);
+    expect(result.outputs).toEqual(['RET', 'ET', 'RO', 'DCBA', '-1', '3']);
   });
 
   it('supports SYS.SLEEP and RANDOM.INT', async () => {
@@ -241,6 +241,19 @@ PRINT "END"`;
       expect(num).toBeGreaterThanOrEqual(5);
       expect(num).toBeLessThanOrEqual(10);
     });
+  });
+
+  it('sorts arrays and joins elements', async () => {
+    const result = await run('PRINT ARRAY.SORT([5,2,8,1])\nPRINT ARRAY.JOIN(ARRAY.REVERSE(["A","B","C"]), "-")');
+    expect(result.outputs[0]).toBe('[1,2,5,8]');
+    expect(result.outputs[1]).toBe('C-B-A');
+  });
+
+  it('formats time values', async () => {
+    const result = await run(
+      'LET T$ = TIME.FORMAT("2020-01-02T03:04:05Z", "YYYY-MM-DD HH:mm:ss")\nPRINT T$'
+    );
+    expect(result.outputs[0]).toBe('2020-01-02 03:04:05');
   });
 
   it('reads and writes files through FS namespace', async () => {
@@ -309,7 +322,7 @@ PRINT FS.LIST("${escapedDir}")
 
   it('parses JSON documents and extracts values', async () => {
     const program = `
-LET J = JSON.PARSE("{\"temp\":{\"value\":42,\"status\":\"ok\"}}")
+LET J = JSON.PARSE("{""temp"":{""value"":42,""status"":""ok""}}")
 PRINT JSON.GET(J, "temp.value")
 PRINT JSON.TYPE(J, "temp")
 PRINT JSON.STRINGIFY(J, "temp")

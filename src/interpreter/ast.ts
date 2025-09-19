@@ -104,6 +104,7 @@ export type ExpressionNode =
   | NumberLiteralNode
   | StringLiteralNode
   | IdentifierNode
+  | ArrayLiteralNode
   | UnaryExpressionNode
   | BinaryExpressionNode
   | CallExpressionNode
@@ -125,6 +126,12 @@ export interface StringLiteralNode {
 export interface IdentifierNode {
   readonly type: 'Identifier';
   readonly name: string;
+  readonly token: Token;
+}
+
+export interface ArrayLiteralNode {
+  readonly type: 'ArrayLiteral';
+  readonly elements: ExpressionNode[];
   readonly token: Token;
 }
 
