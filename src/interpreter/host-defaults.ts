@@ -223,14 +223,24 @@ function createFileSystemNamespace() {
 }
 
 function createHttpNamespace() {
+  const ensureProtocol = (url: string): string => {
+    // If no protocol specified, default to https://
+    if (!/^https?:\/\//i.test(url)) {
+      return `https://${url}`;
+    }
+    return url;
+  };
+
   return createNamespace('HTTP', {
     GET: createFunction('HTTP.GET', async (args) => {
-      const url = requireStringArg('HTTP.GET', args, 0);
+      const rawUrl = requireStringArg('HTTP.GET', args, 0);
+      const url = ensureProtocol(rawUrl);
       const response = await fetch(url);
       return await response.text();
     }),
     POST: createFunction('HTTP.POST', async (args) => {
-      const url = requireStringArg('HTTP.POST', args, 0);
+      const rawUrl = requireStringArg('HTTP.POST', args, 0);
+      const url = ensureProtocol(rawUrl);
       const body = requireStringArg('HTTP.POST', args, 1);
       const response = await fetch(url, {
         method: 'POST',
@@ -240,7 +250,8 @@ function createHttpNamespace() {
       return await response.text();
     }),
     STATUS: createFunction('HTTP.STATUS', async (args) => {
-      const url = requireStringArg('HTTP.STATUS', args, 0);
+      const rawUrl = requireStringArg('HTTP.STATUS', args, 0);
+      const url = ensureProtocol(rawUrl);
       const response = await fetch(url, { method: 'HEAD' });
       return response.status;
     })

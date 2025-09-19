@@ -155,13 +155,36 @@ async function executeBuffer() {
     const response = await window.basic9000.execute(command);
     if (response.ok) {
       if (response.outputs?.length) {
-        response.outputs.forEach((line) => term.writeln(line));
+        response.outputs.forEach((line) => {
+          // Handle multiline output by splitting on newlines
+          const lines = String(line).split('\n');
+          lines.forEach((l, i) => {
+            if (i === lines.length - 1 && l === '') {
+              // Skip empty last line from split
+              return;
+            }
+            term.writeln(l);
+          });
+        });
       }
       if (response.halted) {
         term.writeln(`(HALTED: ${response.halted})`);
       }
     } else {
-      term.writeln(`? ${response.error}`);
+      // Format error output to handle long lines and JSON
+      const errorText = String(response.error);
+      const lines = errorText.split('\n');
+      lines.forEach((line) => {
+        // Break long lines at reasonable width
+        const maxWidth = 100;
+        if (line.length > maxWidth) {
+          for (let i = 0; i < line.length; i += maxWidth) {
+            term.writeln(`? ${i === 0 ? '' : '  '}${line.substring(i, i + maxWidth)}`);
+          }
+        } else {
+          term.writeln(`? ${line}`);
+        }
+      });
     }
   } catch (error) {
     term.writeln(`! ${(error && error.message) || error}`);
