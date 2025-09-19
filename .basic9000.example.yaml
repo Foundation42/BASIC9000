@@ -1,0 +1,21 @@
+# BASIC9000 Configuration Example
+# Copy this to .basic9000.yaml and add your API keys
+
+# AI API Keys
+openai_api_key: "sk-proj-YOUR_OPENAI_KEY_HERE"
+anthropic_api_key: "sk-ant-YOUR_ANTHROPIC_KEY_HERE"
+
+# Local AI Server (Ollama)
+ollama_endpoint: "http://localhost:11434/v1"
+
+# Default AI Settings
+default_ai_provider: "openai"
+default_ai_model: "gpt-3.5-turbo"
+default_temperature: 0.7
+
+# Custom Settings
+custom_setting: "your_value_here"
+debug_mode: false
+
+# You can also use environment-style naming
+OPENAI_API_KEY: "sk-proj-YOUR_OPENAI_KEY_HERE"

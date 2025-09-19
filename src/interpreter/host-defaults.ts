@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import WebSocket from 'ws';
 import { createAINamespace } from './ai-namespace.js';
+import { createConfigNamespace } from './config-namespace.js';
 
 import {
   HostEnvironment,
@@ -27,6 +28,7 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   env.register('WS', createWebSocketNamespace());
   env.register('JSON', createJsonNamespace());
   env.register('AI', createAINamespace());
+  env.register('CONFIG', createConfigNamespace());
   return env;
 }
 
@@ -39,6 +41,12 @@ function createSystemNamespace() {
     ENV: createFunction('SYS.ENV', (args) => {
       const key = requireStringArg('SYS.ENV', args, 0);
       return process.env[key] ?? '';
+    }),
+    SETENV: createFunction('SYS.SETENV', (args) => {
+      const key = requireStringArg('SYS.SETENV', args, 0);
+      const value = requireStringArg('SYS.SETENV', args, 1);
+      process.env[key] = value;
+      return 0;
     }),
     JOINPATH: createFunction('SYS.JOINPATH', (args) => {
       const segments = args.map((segment, index) => requireStringValue('SYS.JOINPATH', segment, index));

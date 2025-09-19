@@ -145,9 +145,13 @@ class AIInstance {
   }
 
   private async callOpenAIAPI(messages: Message[], maxTokens?: number): Promise<string> {
-    const apiKey = apiKeys.get('openai') || process.env.OPENAI_API_KEY;
+    const apiKey = apiKeys.get('openai') ||
+                  process.env.OPENAI_API_KEY ||
+                  process.env.OPENAI_KEY ||
+                  process.env.openai_api_key ||
+                  process.env.openai_key;
     if (!apiKey && this.config.provider === 'openai') {
-      throw new Error('OpenAI API key not configured. Use AI.KEY "openai", your_key');
+      throw new Error('OpenAI API key not configured. Use AI.KEY("openai", "your_key") or set OPENAI_API_KEY environment variable');
     }
 
     const endpoint = this.config.endpoint || 'https://api.openai.com/v1';
@@ -192,9 +196,13 @@ class AIInstance {
   }
 
   private async callAnthropicAPI(messages: Message[], maxTokens?: number): Promise<string> {
-    const apiKey = apiKeys.get('anthropic') || process.env.ANTHROPIC_API_KEY;
+    const apiKey = apiKeys.get('anthropic') ||
+                  process.env.ANTHROPIC_API_KEY ||
+                  process.env.ANTHROPIC_KEY ||
+                  process.env.anthropic_api_key ||
+                  process.env.anthropic_key;
     if (!apiKey) {
-      throw new Error('Anthropic API key not configured. Use AI.KEY "anthropic", your_key');
+      throw new Error('Anthropic API key not configured. Use AI.KEY("anthropic", "your_key") or set ANTHROPIC_API_KEY environment variable');
     }
 
     const endpoint = this.config.endpoint || 'https://api.anthropic.com/v1';
