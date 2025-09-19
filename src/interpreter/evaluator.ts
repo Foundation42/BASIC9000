@@ -93,6 +93,7 @@ class ExecutionContext {
   private readonly outputs: string[] = [];
   private currentPrintBuffer = '';
   private hasPendingBuffer = false;
+  private readonly routines = new Set<string>();
 
   public getVariable(name: string): RuntimeValue {
     const key = normalizeIdentifier(name);
@@ -161,6 +162,16 @@ class ExecutionContext {
     this.outputs.length = 0;
     this.currentPrintBuffer = '';
     this.hasPendingBuffer = false;
+    this.routines.clear();
+  }
+
+  public spawnRoutine(name: string): boolean {
+    const key = normalizeIdentifier(name);
+    if (this.routines.has(key)) {
+      return false;
+    }
+    this.routines.add(key);
+    return true;
   }
 }
 
@@ -169,6 +180,7 @@ class Evaluator {
   private readonly forBindings = new Map<string, ForBinding>();
   private readonly forStack: ForFrame[] = [];
   private readonly gosubStack: StatementPointer[] = [];
+  private readonly routines = new Set<string>();
   private readonly hostEnvironment: HostEnvironment;
   private stepCount = 0;
   public haltReason: 'END' | 'STOP' | undefined;
@@ -258,6 +270,8 @@ class Evaluator {
         return { type: 'halt', reason: 'STOP' };
       case 'EndStatement':
         return { type: 'halt', reason: 'END' };
+      case 'SpawnStatement':
+        return this.executeSpawn(statement);
       case 'ExpressionStatement':
         await this.evaluateExpression(statement.expression);
         return undefined;
@@ -281,6 +295,17 @@ class Evaluator {
     const target = this.evaluateAssignmentTarget(statement.target);
     const value = await this.evaluateExpression(statement.value);
     this.context.setVariable(target.name, value, statement.token);
+    return undefined;
+  }
+
+  private async executeSpawn(statement: SpawnStatementNode): Promise<StatementSignal | undefined> {
+    const rawName = await this.evaluateExpression(statement.routine);
+    const name = toStringValue(rawName) || 'ROUTINE';
+    const added = this.context.spawnRoutine(name);
+    const message = added
+      ? `Routine ${name} spawned successfully`
+      : `Routine ${name} already running`;
+    this.context.writePrint([message], 'newline');
     return undefined;
   }
 

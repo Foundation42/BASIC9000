@@ -131,6 +131,11 @@ class Parser {
       return { type: 'ReturnStatement', token: keyword } satisfies ReturnStatementNode;
     }
 
+    if (this.matchKeyword('SPAWN')) {
+      const keyword = this.previous();
+      return this.parseSpawnStatement(keyword);
+    }
+
     if (this.matchKeyword('STOP')) {
       const keyword = this.previous();
       return { type: 'StopStatement', token: keyword } satisfies StopStatementNode;
@@ -265,6 +270,11 @@ class Parser {
       target = { type: 'MemberExpression', object: target, property } satisfies MemberExpressionNode;
     }
     return target;
+  }
+
+  private parseSpawnStatement(keyword: Token): SpawnStatementNode {
+    const routine = this.parseExpression();
+    return { type: 'SpawnStatement', token: keyword, routine } satisfies SpawnStatementNode;
   }
 
   private parseExpression(): ExpressionNode {
