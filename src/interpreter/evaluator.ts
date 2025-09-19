@@ -17,11 +17,12 @@ import type {
   PrintStatementNode,
   ProgramNode,
   ReturnStatementNode,
+  StopStatementNode,
   StatementNode,
   StringLiteralNode,
   UnaryExpressionNode
 } from './ast.js';
-import { TokenType, type Token } from './tokenizer.js';
+import type { Token } from './tokenizer.js';
 
 export type RuntimeValue = number | string;
 
@@ -115,6 +116,8 @@ class ExecutionContext {
 
 class Evaluator {
   private readonly lineIndexByNumber = new Map<number, number>();
+  private readonly forBindings = new Map<string, ForBinding>();
+  private readonly forStack: ForFrame[] = [];
   private stepCount = 0;
   public haltReason: 'END' | 'STOP' | undefined;
 
@@ -128,43 +131,57 @@ class Evaluator {
         this.lineIndexByNumber.set(line.lineNumber, index);
       }
     });
+    this.buildLoopBindings();
   }
 
   public run(): void {
     const { lines } = this.program;
     let lineIndex = 0;
+    let statementIndex = 0;
 
     while (lineIndex < lines.length && !this.haltReason) {
       const line = lines[lineIndex]!;
-      const signal = this.executeLine(line, lineIndex);
-      if (signal?.type === 'jump') {
-        lineIndex = signal.targetLineIndex;
+      const signal = this.executeLine(line, lineIndex, statementIndex);
+
+      if (!signal) {
+        lineIndex += 1;
+        statementIndex = 0;
         continue;
       }
-      if (signal?.type === 'halt') {
+
+      if (signal.type === 'jump') {
+        lineIndex = signal.targetLineIndex;
+        statementIndex = signal.targetStatementIndex ?? 0;
+        continue;
+      }
+
+      if (signal.type === 'halt') {
         this.haltReason = signal.reason;
         break;
       }
-      lineIndex += 1;
     }
   }
 
-  private executeLine(line: LineNode, lineIndex: number): StatementSignal | undefined {
-    for (let i = 0; i < line.statements.length; i += 1) {
-      this.ensureWithinStepBudget(line.statements[i]!.token);
-      const signal = this.executeStatement(line.statements[i]!);
-      if (!signal) {
-        continue;
+  private executeLine(
+    line: LineNode,
+    lineIndex: number,
+    startStatementIndex: number
+  ): StatementSignal | undefined {
+    for (let i = startStatementIndex; i < line.statements.length; i += 1) {
+      const statement = line.statements[i]!;
+      this.ensureWithinStepBudget(statement.token);
+      const signal = this.executeStatement(statement, { lineIndex, statementIndex: i });
+      if (signal) {
+        return signal;
       }
-      if (signal.type === 'continue') {
-        continue;
-      }
-      return signal;
     }
     return undefined;
   }
 
-  private executeStatement(statement: StatementNode): StatementSignal | undefined {
+  private executeStatement(
+    statement: StatementNode,
+    position: StatementPosition
+  ): StatementSignal | undefined {
     switch (statement.type) {
       case 'LetStatement':
         return this.executeLet(statement);
@@ -173,17 +190,19 @@ class Evaluator {
       case 'PrintStatement':
         return this.executePrint(statement);
       case 'IfStatement':
-        return this.executeIf(statement);
+        return this.executeIf(statement, position);
       case 'ForStatement':
-        return this.unsupportedStatement('FOR loops are not implemented yet', statement.token);
+        return this.executeFor(statement, position);
       case 'NextStatement':
-        return this.unsupportedStatement('NEXT is not implemented yet', statement.token);
+        return this.executeNext(statement, position);
       case 'GotoStatement':
         return this.executeGoto(statement);
       case 'GosubStatement':
         return this.unsupportedStatement('GOSUB is not implemented yet', statement.token);
       case 'ReturnStatement':
         return this.unsupportedStatement('RETURN is not implemented yet', statement.token);
+      case 'StopStatement':
+        return { type: 'halt', reason: 'STOP' };
       case 'EndStatement':
         return { type: 'halt', reason: 'END' };
       case 'ExpressionStatement':
@@ -233,11 +252,14 @@ class Evaluator {
     return undefined;
   }
 
-  private executeIf(statement: IfStatementNode): StatementSignal | undefined {
+  private executeIf(
+    statement: IfStatementNode,
+    position: StatementPosition
+  ): StatementSignal | undefined {
     const condition = this.evaluateExpression(statement.condition);
     const branch = truthy(condition) ? statement.thenBranch : statement.elseBranch ?? [];
     for (const nested of branch) {
-      const signal = this.executeStatement(nested);
+      const signal = this.executeStatement(nested, position);
       if (signal) {
         return signal;
       }
@@ -252,7 +274,7 @@ class Evaluator {
     if (index === undefined) {
       throw new RuntimeError(`Unknown line number ${lineNumber}`, statement.token);
     }
-    return { type: 'jump', targetLineIndex: index };
+    return { type: 'jump', targetLineIndex: index, targetStatementIndex: 0 };
   }
 
   private evaluateAssignmentTarget(target: IdentifierNode | MemberExpressionNode): IdentifierNode {
@@ -363,11 +385,170 @@ class Evaluator {
   private unsupportedStatement(message: string, token: Token): StatementSignal {
     throw new RuntimeError(message, token);
   }
+
+  private buildLoopBindings(): void {
+    const stack: Array<{ pointer: StatementPointer; statement: ForStatementNode }> = [];
+
+    this.program.lines.forEach((line, lineIndex) => {
+      line.statements.forEach((statement, statementIndex) => {
+        if (statement.type === 'ForStatement') {
+          const pointer: StatementPointer = { lineIndex, statementIndex };
+          stack.push({ pointer, statement });
+          return;
+        }
+
+        if (statement.type === 'NextStatement') {
+          let frameIndex = stack.length - 1;
+          if (frameIndex < 0) {
+            return;
+          }
+
+          if (statement.iterator) {
+            const target = normalizeIdentifier(statement.iterator.name);
+            for (let i = stack.length - 1; i >= 0; i -= 1) {
+              const candidate = stack[i]!;
+              if (normalizeIdentifier(candidate.statement.iterator.name) === target) {
+                frameIndex = i;
+                break;
+              }
+            }
+          }
+
+          const bindingSource = stack.splice(frameIndex, 1)[0];
+          if (!bindingSource) {
+            return;
+          }
+
+          const pointerKey = makePointerKey(bindingSource.pointer);
+          const nextPointer: StatementPointer = { lineIndex, statementIndex };
+          const afterNextPointer = this.findNextStatementPointer(lineIndex, statementIndex);
+          this.forBindings.set(pointerKey, {
+            nextPointer,
+            afterNextPointer,
+            nextToken: statement.token
+          });
+        }
+      });
+    });
+  }
+
+  private findNextStatementPointer(
+    lineIndex: number,
+    statementIndex: number
+  ): StatementPointer | undefined {
+    let currentLine = lineIndex;
+    let currentStatement = statementIndex + 1;
+
+    while (currentLine < this.program.lines.length) {
+      const line = this.program.lines[currentLine]!;
+      if (currentStatement < line.statements.length) {
+        return { lineIndex: currentLine, statementIndex: currentStatement };
+      }
+      currentLine += 1;
+      currentStatement = 0;
+    }
+
+    return undefined;
+  }
+
+  private executeFor(
+    statement: ForStatementNode,
+    position: StatementPosition
+  ): StatementSignal | undefined {
+    const iteratorName = statement.iterator.name;
+    const startValue = toNumber(this.evaluateExpression(statement.start), statement.token);
+    const endValue = toNumber(this.evaluateExpression(statement.end), statement.token);
+    const stepValue = statement.step
+      ? toNumber(this.evaluateExpression(statement.step), statement.token)
+      : 1;
+
+    if (stepValue === 0) {
+      throw new RuntimeError('FOR step cannot be zero', statement.token);
+    }
+
+    const binding = this.forBindings.get(makePointerKey(position));
+    if (!binding) {
+      throw new RuntimeError('FOR without matching NEXT', statement.token);
+    }
+
+    this.context.setVariable(iteratorName, startValue, statement.token);
+
+    const continueCondition = stepValue > 0 ? startValue <= endValue : startValue >= endValue;
+    if (!continueCondition) {
+      const targetPointer =
+        binding.afterNextPointer ?? advancePointer(binding.nextPointer) ?? binding.nextPointer;
+      return {
+        type: 'jump',
+        targetLineIndex: targetPointer.lineIndex,
+        targetStatementIndex: targetPointer.statementIndex
+      };
+    }
+
+    const bodyPointer =
+      this.findNextStatementPointer(position.lineIndex, position.statementIndex) ??
+      advancePointer(position) ??
+      binding.nextPointer;
+
+    this.forStack.push({
+      iteratorName,
+      iteratorKey: normalizeIdentifier(iteratorName),
+      end: endValue,
+      step: stepValue,
+      bodyPointer,
+      nextPointer: binding.nextPointer,
+      token: statement.token
+    });
+
+    return undefined;
+  }
+
+  private executeNext(
+    statement: NextStatementNode,
+    position: StatementPosition
+  ): StatementSignal | undefined {
+    if (this.forStack.length === 0) {
+      throw new RuntimeError('NEXT without FOR', statement.token);
+    }
+
+    let frame = this.forStack[this.forStack.length - 1]!;
+
+    if (statement.iterator) {
+      const target = normalizeIdentifier(statement.iterator.name);
+      const index = findLastIndex(this.forStack, (entry) => entry.iteratorKey === target);
+      if (index === -1) {
+        throw new RuntimeError('NEXT variable does not match any active FOR', statement.token);
+      }
+      if (index !== this.forStack.length - 1) {
+        throw new RuntimeError('FOR loops must close in order', statement.token);
+      }
+      frame = this.forStack[index]!;
+    }
+
+    const currentValue = toNumber(this.context.getVariable(frame.iteratorName), statement.token);
+    const nextValue = currentValue + frame.step;
+    this.context.setVariable(frame.iteratorName, nextValue, statement.token);
+
+    const continueCondition = frame.step > 0 ? nextValue <= frame.end : nextValue >= frame.end;
+    if (continueCondition) {
+      if (!frame.bodyPointer) {
+        return { type: 'jump', targetLineIndex: frame.nextPointer.lineIndex, targetStatementIndex: frame.nextPointer.statementIndex };
+      }
+      return {
+        type: 'jump',
+        targetLineIndex: frame.bodyPointer.lineIndex,
+        targetStatementIndex: frame.bodyPointer.statementIndex
+      };
+    }
+
+    this.forStack.pop();
+    return undefined;
+  }
 }
 
 interface StatementSignalJump {
   readonly type: 'jump';
   readonly targetLineIndex: number;
+  readonly targetStatementIndex?: number;
 }
 
 interface StatementSignalHalt {
@@ -375,11 +556,30 @@ interface StatementSignalHalt {
   readonly reason: 'END' | 'STOP';
 }
 
-interface StatementSignalContinue {
-  readonly type: 'continue';
+type StatementSignal = StatementSignalJump | StatementSignalHalt | undefined;
+
+interface StatementPointer {
+  readonly lineIndex: number;
+  readonly statementIndex: number;
 }
 
-type StatementSignal = StatementSignalJump | StatementSignalHalt | StatementSignalContinue | undefined;
+interface ForBinding {
+  readonly nextPointer: StatementPointer;
+  readonly afterNextPointer?: StatementPointer;
+  readonly nextToken: Token;
+}
+
+interface StatementPosition extends StatementPointer {}
+
+interface ForFrame {
+  readonly iteratorName: string;
+  readonly iteratorKey: string;
+  readonly end: number;
+  readonly step: number;
+  readonly bodyPointer?: StatementPointer;
+  readonly nextPointer: StatementPointer;
+  readonly token: Token;
+}
 
 function normalizeIdentifier(name: string): string {
   return name.toUpperCase();
@@ -477,4 +677,24 @@ function toLineNumber(value: RuntimeValue, token: Token): number {
     throw new RuntimeError('GOTO requires an integer line number', token);
   }
   return parsed;
+}
+
+function makePointerKey(pointer: StatementPointer): string {
+  return `${pointer.lineIndex}:${pointer.statementIndex}`;
+}
+
+function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean): number {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (predicate(items[i]!)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function advancePointer(pointer: StatementPointer): StatementPointer | undefined {
+  return {
+    lineIndex: pointer.lineIndex,
+    statementIndex: pointer.statementIndex + 1
+  };
 }

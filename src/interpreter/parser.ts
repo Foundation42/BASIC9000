@@ -21,6 +21,7 @@ import type {
   PrintStatementNode,
   ProgramNode,
   ReturnStatementNode,
+  StopStatementNode,
   StatementNode,
   StringLiteralNode,
   UnaryExpressionNode
@@ -128,6 +129,11 @@ class Parser {
     if (this.matchKeyword('RETURN')) {
       const keyword = this.previous();
       return { type: 'ReturnStatement', token: keyword } satisfies ReturnStatementNode;
+    }
+
+    if (this.matchKeyword('STOP')) {
+      const keyword = this.previous();
+      return { type: 'StopStatement', token: keyword } satisfies StopStatementNode;
     }
 
     if (this.matchKeyword('END')) {

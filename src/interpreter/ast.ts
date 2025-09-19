@@ -20,6 +20,7 @@ export type StatementNode =
   | GotoStatementNode
   | GosubStatementNode
   | ReturnStatementNode
+  | StopStatementNode
   | EndStatementNode
   | ExpressionStatementNode;
 
@@ -84,6 +85,10 @@ export interface GosubStatementNode extends BaseStatementNode {
 
 export interface ReturnStatementNode extends BaseStatementNode {
   readonly type: 'ReturnStatement';
+}
+
+export interface StopStatementNode extends BaseStatementNode {
+  readonly type: 'StopStatement';
 }
 
 export interface EndStatementNode extends BaseStatementNode {
