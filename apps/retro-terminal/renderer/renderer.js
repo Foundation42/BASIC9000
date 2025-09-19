@@ -32,6 +32,10 @@ const statusBar = document.getElementById('status-bar');
 const overlays = document.getElementById('overlays');
 term.open(terminalHost);
 fitAddon.fit();
+term.focus();
+
+window.addEventListener('focus', () => term.focus());
+terminalHost.addEventListener('mousedown', () => term.focus());
 
 window.addEventListener('resize', () => {
   fitAddon.fit();
