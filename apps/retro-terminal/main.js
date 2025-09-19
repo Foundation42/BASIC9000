@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
 
 const sessionPromise = (async () => {
   const {
@@ -11,7 +12,16 @@ const sessionPromise = (async () => {
 
   const env = createDefaultHostEnvironment();
   env.register('TERMINAL', createTerminalNamespace(createNamespace, createFunction));
-  return new InterpreterSession({ hostEnvironment: env });
+  const session = new InterpreterSession({ hostEnvironment: env });
+  try {
+    const bootScript = await fs.promises.readFile(path.join(__dirname, 'boot.bas'), 'utf8').catch(() => null);
+    if (bootScript) {
+      await session.run(bootScript);
+    }
+  } catch (error) {
+    console.error('Failed to execute boot script:', error);
+  }
+  return session;
 })();
 
 let terminalWindow;
@@ -81,6 +91,12 @@ function createTerminalNamespace(createNamespace, createFunction) {
     }),
     BELL: createFunction('TERMINAL.BELL', () => {
       action({ type: 'bell' });
+      return 0;
+    }),
+    OVERLAY: createFunction('TERMINAL.OVERLAY', (args) => {
+      const text = args[0] ?? '';
+      const duration = args.length >= 2 ? Math.max(0, Number(args[1])) : 0;
+      action({ type: 'overlay', text: String(text ?? ''), duration });
       return 0;
     })
   });

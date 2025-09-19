@@ -27,9 +27,10 @@ const linksAddon = new window.basic9000.WebLinksAddon((_, url) => {
 term.loadAddon(fitAddon);
 term.loadAddon(linksAddon);
 
-const container = document.getElementById('terminal');
+const terminalHost = document.getElementById('terminal');
 const statusBar = document.getElementById('status-bar');
-term.open(container);
+const overlays = document.getElementById('overlays');
+term.open(terminalHost);
 fitAddon.fit();
 
 window.addEventListener('resize', () => {
@@ -40,6 +41,7 @@ let buffer = '';
 const history = [];
 let historyIndex = -1;
 let executing = false;
+let overlayTimer = null;
 
 window.basic9000.onAction((payload) => {
   if (!payload || typeof payload !== 'object') {
@@ -58,6 +60,9 @@ window.basic9000.onAction((payload) => {
       break;
     case 'bell':
       term.write('\u0007');
+      break;
+    case 'overlay':
+      showOverlay(String(payload.text ?? ''), Math.max(0, Number(payload.duration ?? 0)));
       break;
     default:
       break;
@@ -96,6 +101,24 @@ function clearScreen() {
 function setStatus(text) {
   if (statusBar) {
     statusBar.textContent = text || 'READY';
+  }
+}
+
+function showOverlay(text, duration) {
+  if (!overlays) {
+    return;
+  }
+  overlays.textContent = text || '';
+  overlays.style.opacity = text ? '1' : '0';
+  if (overlayTimer) {
+    clearTimeout(overlayTimer);
+    overlayTimer = null;
+  }
+  if (text && duration > 0) {
+    overlayTimer = setTimeout(() => {
+      overlays.style.opacity = '0';
+      overlayTimer = null;
+    }, duration);
   }
 }
 
