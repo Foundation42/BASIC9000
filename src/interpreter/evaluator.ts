@@ -28,6 +28,7 @@ import {
   isHostFunction,
   isHostNamespace
 } from './host.js';
+import { createDefaultHostEnvironment } from './host-defaults.js';
 import type { RuntimeValue } from './runtime-values.js';
 import type { Token } from './tokenizer.js';
 
@@ -140,7 +141,7 @@ class Evaluator {
     private readonly context: ExecutionContext,
     private readonly options: ExecutionOptions
   ) {
-    this.hostEnvironment = options.hostEnvironment ?? new HostEnvironment();
+    this.hostEnvironment = options.hostEnvironment ?? createDefaultHostEnvironment();
     program.lines.forEach((line, index) => {
       if (typeof line.lineNumber === 'number') {
         this.lineIndexByNumber.set(line.lineNumber, index);
@@ -714,7 +715,10 @@ function coerceValueForIdentifier(name: string, value: RuntimeValue, token: Toke
   if (typeof value === 'number') {
     return value;
   }
-  return toNumber(value, token);
+  if (typeof value === 'string') {
+    return toNumber(value, token);
+  }
+  return value;
 }
 
 function runtimeValueToString(value: RuntimeValue): string {

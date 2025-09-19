@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { parseSource } from '../../src/interpreter/parser.js';
 import {
   executeProgram,
@@ -193,5 +197,37 @@ PRINT "END"`;
 
   it('throws when FOR uses zero step', () => {
     expect(() => run('FOR Z = 1 TO 5 STEP 0\nNEXT Z')).toThrow(RuntimeError);
+  });
+
+  it('exposes math functions via default environment', () => {
+    const result = run('PRINT MATH.SIN(0)\nPRINT MATH.ABS(-5)');
+    expect(result.outputs).toEqual(['0', '5']);
+  });
+
+  it('supports string helpers and environment info', () => {
+    const result = run('PRINT STR.LOWER("HELLO")\nPRINT SYS.PLATFORM() <> ""');
+    expect(result.outputs[0]).toBe('hello');
+    expect(result.outputs[1]).toBe('-1');
+  });
+
+  it('reads and writes files through FS namespace', () => {
+    const tmpDir = os.tmpdir();
+    const filePath = path.join(tmpDir, `basic9000-spec-${Date.now()}.txt`);
+    const escapedPath = filePath.replace(/"/g, '""');
+    const program = `
+LET P$ = "${escapedPath}"
+FS.WRITE(P$, "DATA")
+PRINT FS.EXISTS(P$)
+PRINT FS.READ(P$)
+`;
+    try {
+      const result = run(program.trim());
+      expect(result.outputs).toEqual(['-1', 'DATA']);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe('DATA');
+    } finally {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
   });
 });
