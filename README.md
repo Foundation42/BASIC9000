@@ -4,7 +4,7 @@
 
 A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computing with modern capabilities. Experience the green phosphor glow of CRT terminals while leveraging contemporary features like HTTP requests, JSON parsing, and WebGPU graphics.
 
-![Boot Screen](BOOTSCREEN.png?v=2)
+![Boot Screen](BOOT.png)
 
 ## ✨ Features
 
