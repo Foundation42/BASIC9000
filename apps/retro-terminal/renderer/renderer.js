@@ -5,7 +5,7 @@ const banner = [
   'Type HELP for ideas. Press Ctrl+L to clear, Ctrl+R to reset session.'
 ];
 
-const term = new window.basic9000.Terminal({
+const term = new Terminal({
   cursorBlink: true,
   cols: 120,
   rows: 32,
@@ -19,8 +19,8 @@ const term = new window.basic9000.Terminal({
   }
 });
 
-const fitAddon = new window.basic9000.FitAddon();
-const linksAddon = new window.basic9000.WebLinksAddon((_, url) => {
+const fitAddon = new FitAddon.FitAddon();
+const linksAddon = new WebLinksAddon.WebLinksAddon((_, url) => {
   window.open(url, '_blank');
 });
 
@@ -30,12 +30,24 @@ term.loadAddon(linksAddon);
 const terminalHost = document.getElementById('terminal');
 const statusBar = document.getElementById('status-bar');
 const overlays = document.getElementById('overlays');
+
 term.open(terminalHost);
 fitAddon.fit();
-term.focus();
 
+// Delay initial focus to ensure terminal is ready
+setTimeout(() => {
+  term.focus();
+}, 10);
+
+// Re-focus on various events
 window.addEventListener('focus', () => term.focus());
 terminalHost.addEventListener('mousedown', () => term.focus());
+terminalHost.addEventListener('click', () => term.focus());
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#terminal-container')) {
+    term.focus();
+  }
+});
 
 window.addEventListener('resize', () => {
   fitAddon.fit();

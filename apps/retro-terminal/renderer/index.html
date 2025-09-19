@@ -10,11 +10,15 @@
   </head>
   <body>
     <div id="terminal-container">
-      <div id="terminal">
+      <div id="terminal-wrapper">
+        <div id="terminal"></div>
         <div id="overlays"></div>
       </div>
       <div id="status-bar">READY</div>
     </div>
-    <script type="module" src="renderer.js"></script>
+    <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+    <script src="renderer.js"></script>
   </body>
 </html>
