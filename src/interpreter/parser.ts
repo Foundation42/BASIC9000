@@ -261,7 +261,7 @@ class Parser {
     const identifier = this.parseIdentifier();
     let target: IdentifierNode | MemberExpressionNode = identifier;
     while (this.match(TokenType.Dot)) {
-      const property = this.parseIdentifier();
+      const property = this.parseMemberProperty();
       target = { type: 'MemberExpression', object: target, property } satisfies MemberExpressionNode;
     }
     return target;
@@ -388,7 +388,7 @@ class Parser {
       }
 
       if (this.match(TokenType.Dot)) {
-        const property = this.parseIdentifier();
+        const property = this.parseMemberProperty();
         expr = { type: 'MemberExpression', object: expr, property } satisfies MemberExpressionNode;
         continue;
       }
@@ -432,6 +432,14 @@ class Parser {
     }
     const token = this.previous();
     return { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
+  }
+
+  private parseMemberProperty(): IdentifierNode {
+    if (this.match(TokenType.Identifier) || this.match(TokenType.Keyword)) {
+      const token = this.previous();
+      return { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
+    }
+    throw new ParseError('Expected identifier', this.peek());
   }
 
   private consumeNumberLiteral(): number {

@@ -16,13 +16,13 @@ export interface HostFunctionContext {
 export type HostFunctionHandler = (
   args: RuntimeValue[],
   context: HostFunctionContext
-) => RuntimeValue;
+) => RuntimeValue | Promise<RuntimeValue>;
 
 export interface HostFunctionValue {
   readonly kind: 'host-function';
   readonly name: string;
   readonly arity?: number;
-  invoke(args: RuntimeValue[], context: HostFunctionContext): RuntimeValue;
+  invoke(args: RuntimeValue[], context: HostFunctionContext): Promise<RuntimeValue>;
 }
 
 export class HostEnvironment {
@@ -91,7 +91,7 @@ class SimpleHostFunction implements HostFunctionValue {
     public readonly arity?: number
   ) {}
 
-  public invoke(args: RuntimeValue[], context: HostFunctionContext): RuntimeValue {
+  public async invoke(args: RuntimeValue[], context: HostFunctionContext): Promise<RuntimeValue> {
     if (typeof this.arity === 'number' && args.length !== this.arity) {
       throw new Error(`Function ${this.name} expects ${this.arity} argument(s)`);
     }

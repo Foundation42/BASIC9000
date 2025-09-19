@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+
+import { WebSocketServer } from 'ws';
 
 import { parseSource } from '../../src/interpreter/parser.js';
 import {
@@ -19,71 +22,73 @@ const run = (source: string, options?: ExecutionOptions) =>
   executeProgram(parseSource(source), options);
 
 describe('evaluator', () => {
-  it('executes sequential statements with variables and print', () => {
-    const result = run('LET X = 2\nPRINT X');
+  it('executes sequential statements with variables and print', async () => {
+    const result = await run('LET X = 2\nPRINT X');
     expect(result.outputs).toEqual(['2']);
     expect(result.variables).toMatchObject({ X: 2 });
   });
 
-  it('supports implicit assignment and expression statements', () => {
-    const result = run('value = 5 * 3\nPRINT value + 2');
+  it('supports implicit assignment and expression statements', async () => {
+    const result = await run('value = 5 * 3\nPRINT value + 2');
     expect(result.outputs).toEqual(['17']);
     expect(result.variables).toMatchObject({ VALUE: 15 });
   });
 
-  it('defaults string variables to empty and numeric to zero', () => {
-    const result = run('PRINT name$\nPRINT counter');
+  it('defaults string variables to empty and numeric to zero', async () => {
+    const result = await run('PRINT name$\nPRINT counter');
     expect(result.outputs).toEqual(['', '0']);
   });
 
-  it('concatenates strings and respects semicolon trailing behaviour', () => {
-    const result = run('PRINT "HELLO"; : PRINT "WORLD"');
+  it('concatenates strings and respects semicolon trailing behaviour', async () => {
+    const result = await run('PRINT "HELLO"; : PRINT "WORLD"');
     expect(result.outputs).toEqual(['HELLOWORLD']);
   });
 
-  it('evaluates inline IF/ELSE branches', () => {
-    const result = run('IF 1 THEN PRINT "YES" ELSE PRINT "NO"');
+  it('evaluates inline IF/ELSE branches', async () => {
+    const result = await run('IF 1 THEN PRINT "YES" ELSE PRINT "NO"');
     expect(result.outputs).toEqual(['YES']);
   });
 
-  it('short-circuits IF when condition is false', () => {
-    const result = run('LET A = 0\nIF A THEN PRINT "SHOULD NOT" ELSE PRINT "OK"');
+  it('short-circuits IF when condition is false', async () => {
+    const result = await run('LET A = 0\nIF A THEN PRINT "SHOULD NOT" ELSE PRINT "OK"');
     expect(result.outputs).toEqual(['OK']);
   });
 
-  it('handles goto with numeric targets', () => {
-    const result = run('10 PRINT "A"\n20 GOTO 40\n30 PRINT "B"\n40 PRINT "C"');
+  it('handles goto with numeric targets', async () => {
+    const result = await run('10 PRINT "A"\n20 GOTO 40\n30 PRINT "B"\n40 PRINT "C"');
     expect(result.outputs).toEqual(['A', 'C']);
   });
 
-  it('performs numeric comparisons and boolean math', () => {
-    const result = run('IF 5 > 3 THEN PRINT 1 ELSE PRINT 0');
+  it('performs numeric comparisons and boolean math', async () => {
+    const result = await run('IF 5 > 3 THEN PRINT 1 ELSE PRINT 0');
     expect(result.outputs).toEqual(['1']);
   });
 
-  it('raises runtime error for unsupported constructs', () => {
-    expect(() => run('GOSUB 10')).toThrow(RuntimeError);
+  it('raises runtime error for unsupported constructs', async () => {
+    await expect(run('GOSUB 10')).rejects.toThrow(RuntimeError);
   });
 
-  it('halts on STOP with state preserved', () => {
+  it('halts on STOP with state preserved', async () => {
     const program = 'LET X = 10\nSTOP\nPRINT X * 2';
-    const result = run(program);
+    const result = await run(program);
     expect(result.halted).toBe('STOP');
     expect(result.outputs).toEqual([]);
     expect(result.variables).toMatchObject({ X: 10 });
   });
 
-  it('invokes host namespace functions via member calls', () => {
+  it('invokes host namespace functions via member calls', async () => {
     const hostEnv = new HostEnvironment({
       HTTP: createNamespace('HTTP', {
         GET: createFunction('HTTP.GET', (args) => `GET:${args[0]}`)
       })
     });
-    const result = run('PRINT HTTP.GET("https://example.com")', { hostEnvironment: hostEnv });
+    const result = await run('PRINT HTTP.GET("https://example.com")', {
+      hostEnvironment: hostEnv
+    });
     expect(result.outputs).toEqual(['GET:https://example.com']);
   });
 
-  it('passes execution context to host functions', () => {
+  it('passes execution context to host functions', async () => {
     const hostEnv = new HostEnvironment({
       SYS: createNamespace('SYS', {
         STORE: createFunction('SYS.STORE', (args, ctx) => {
@@ -92,11 +97,11 @@ describe('evaluator', () => {
         })
       })
     });
-    const result = run('SYS.STORE("DATA")\nPRINT stored$', { hostEnvironment: hostEnv });
+    const result = await run('SYS.STORE("DATA")\nPRINT stored$', { hostEnvironment: hostEnv });
     expect(result.outputs).toEqual(['DATA']);
   });
 
-  it('supports nested host namespaces', () => {
+  it('supports nested host namespaces', async () => {
     const hostEnv = new HostEnvironment({
       AI: createNamespace('AI', {
         ANALYZE: createNamespace('ANALYZE', {
@@ -104,18 +109,20 @@ describe('evaluator', () => {
         })
       })
     });
-    const result = run('PRINT AI.ANALYZE.TEXT("hello")', { hostEnvironment: hostEnv });
+    const result = await run('PRINT AI.ANALYZE.TEXT("hello")', { hostEnvironment: hostEnv });
     expect(result.outputs).toEqual(['ANALYSIS:hello']);
   });
 
-  it('throws when accessing unknown host members', () => {
+  it('throws when accessing unknown host members', async () => {
     const hostEnv = new HostEnvironment({
       HTTP: createNamespace('HTTP', {})
     });
-    expect(() => run('PRINT HTTP.POST("/path")', { hostEnvironment: hostEnv })).toThrow(RuntimeError);
+    await expect(run('PRINT HTTP.POST("/path")', { hostEnvironment: hostEnv })).rejects.toThrow(
+      RuntimeError
+    );
   });
 
-  it('executes GOSUB/RETURN and resumes at the correct statement', () => {
+  it('executes GOSUB/RETURN and resumes at the correct statement', async () => {
     const program = `
 10 PRINT "START"
 20 GOSUB 100
@@ -124,18 +131,18 @@ describe('evaluator', () => {
 100 PRINT "SUB"
 110 RETURN
 `;
-    const result = run(program.trim());
+    const result = await run(program.trim());
     expect(result.outputs).toEqual(['START', 'SUB', 'END']);
     expect(result.halted).toBe('STOP');
   });
 
-  it('supports inline GOSUB with statements following on same line', () => {
+  it('supports inline GOSUB with statements following on same line', async () => {
     const program = 'PRINT "A": GOSUB 100: PRINT "B"\nSTOP\n100 PRINT "SUB"\nRETURN';
-    const result = run(program);
+    const result = await run(program);
     expect(result.outputs).toEqual(['A', 'SUB', 'B']);
   });
 
-  it('handles nested GOSUB invocations with stacked returns', () => {
+  it('handles nested GOSUB invocations with stacked returns', async () => {
     const program = `
 10 GOSUB 100
 20 PRINT "DONE"
@@ -147,70 +154,70 @@ describe('evaluator', () => {
 200 PRINT "L2"
 210 RETURN
 `;
-    const result = run(program.trim());
+    const result = await run(program.trim());
     expect(result.outputs).toEqual(['L1', 'L2', 'L1-POST', 'DONE']);
   });
 
-  it('throws when RETURN appears without matching GOSUB', () => {
-    expect(() => run('RETURN')).toThrow(RuntimeError);
+  it('throws when RETURN appears without matching GOSUB', async () => {
+    await expect(run('RETURN')).rejects.toThrow(RuntimeError);
   });
 
-  it('enforces maximum call depth when provided', () => {
+  it('enforces maximum call depth when provided', async () => {
     const recursive = '10 GOSUB 10';
-    expect(() => run(recursive, { maxCallDepth: 8 })).toThrow(RuntimeError);
+    await expect(run(recursive, { maxCallDepth: 8 })).rejects.toThrow(RuntimeError);
   });
 
-  it('executes FOR/NEXT loops with implicit body on next line', () => {
+  it('executes FOR/NEXT loops with implicit body on next line', async () => {
     const program = `
 FOR I = 1 TO 3
 PRINT I
 NEXT I
 PRINT "DONE"`;
-    const result = run(program.trim());
+    const result = await run(program.trim());
     expect(result.outputs).toEqual(['1', '2', '3', 'DONE']);
     expect(result.variables).toMatchObject({ I: 4 });
   });
 
-  it('supports FOR loops with STEP and body on same line', () => {
-    const result = run('FOR X = 2 TO 6 STEP 2: PRINT X: NEXT X');
+  it('supports FOR loops with STEP and body on same line', async () => {
+    const result = await run('FOR X = 2 TO 6 STEP 2: PRINT X: NEXT X');
     expect(result.outputs).toEqual(['2', '4', '6']);
     expect(result.variables).toMatchObject({ X: 8 });
   });
 
-  it('skips loop body when start violates limit', () => {
+  it('skips loop body when start violates limit', async () => {
     const program = `
 FOR J = 5 TO 1 STEP -1
 PRINT J
 NEXT J
 PRINT "END"`;
-    const result = run(program.trim());
+    const result = await run(program.trim());
     expect(result.outputs).toEqual(['5', '4', '3', '2', '1', 'END']);
 
-    const skipResult = run('FOR K = 1 TO 0\nPRINT "MISS"\nNEXT K\nPRINT "AFTER"');
+    const skipResult = await run('FOR K = 1 TO 0\nPRINT "MISS"\nNEXT K\nPRINT "AFTER"');
     expect(skipResult.outputs).toEqual(['AFTER']);
     expect(skipResult.variables).toMatchObject({ K: 1 });
   });
 
-  it('throws when NEXT variable mismatches active loop', () => {
-    expect(() => run('FOR A = 1 TO 2\nNEXT B')).toThrow(RuntimeError);
+  it('throws when NEXT variable mismatches active loop', async () => {
+    await expect(run('FOR A = 1 TO 2\nNEXT B')).rejects.toThrow(RuntimeError);
   });
 
-  it('throws when FOR uses zero step', () => {
-    expect(() => run('FOR Z = 1 TO 5 STEP 0\nNEXT Z')).toThrow(RuntimeError);
+  it('throws when FOR uses zero step', async () => {
+    await expect(run('FOR Z = 1 TO 5 STEP 0\nNEXT Z')).rejects.toThrow(RuntimeError);
   });
 
-  it('exposes math functions via default environment', () => {
-    const result = run('PRINT MATH.SIN(0)\nPRINT MATH.ABS(-5)');
+  it('exposes math functions via default environment', async () => {
+    const result = await run('PRINT MATH.SIN(0)\nPRINT MATH.ABS(-5)');
     expect(result.outputs).toEqual(['0', '5']);
   });
 
-  it('supports string helpers and environment info', () => {
-    const result = run('PRINT STR.LOWER("HELLO")\nPRINT SYS.PLATFORM() <> ""');
+  it('supports string helpers and environment info', async () => {
+    const result = await run('PRINT STR.LOWER("HELLO")\nPRINT SYS.PLATFORM() <> ""');
     expect(result.outputs[0]).toBe('hello');
     expect(result.outputs[1]).toBe('-1');
   });
 
-  it('reads and writes files through FS namespace', () => {
+  it('reads and writes files through FS namespace', async () => {
     const tmpDir = os.tmpdir();
     const filePath = path.join(tmpDir, `basic9000-spec-${Date.now()}.txt`);
     const escapedPath = filePath.replace(/"/g, '""');
@@ -221,13 +228,57 @@ PRINT FS.EXISTS(P$)
 PRINT FS.READ(P$)
 `;
     try {
-      const result = run(program.trim());
+      const result = await run(program.trim());
       expect(result.outputs).toEqual(['-1', 'DATA']);
       expect(fs.readFileSync(filePath, 'utf8')).toBe('DATA');
     } finally {
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
+    }
+  });
+
+  it('performs HTTP GET via default environment', async () => {
+    const server = http.createServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/hello') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('hi there');
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      const program = `PRINT HTTP.GET("http://127.0.0.1:${port}/hello")`;
+      const result = await run(program);
+      expect(result.outputs).toEqual(['hi there']);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('establishes websocket connection and exchanges messages', async () => {
+    const wss = new WebSocketServer({ port: 0 });
+    wss.on('connection', (socket) => {
+      socket.on('message', (message) => {
+        socket.send(`echo:${message}`);
+      });
+    });
+    await new Promise<void>((resolve) => wss.once('listening', resolve));
+    const { port } = wss.address() as { port: number };
+    try {
+      const program = `
+LET C = WS.CONNECT("ws://127.0.0.1:${port}")
+WS.SEND(C, "ping")
+PRINT WS.RECEIVE(C, 1000)
+WS.CLOSE(C)
+`;
+      const result = await run(program.trim());
+      expect(result.outputs).toEqual(['echo:ping']);
+    } finally {
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
     }
   });
 });

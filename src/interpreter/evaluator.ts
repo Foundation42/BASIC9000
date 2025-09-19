@@ -51,14 +51,20 @@ export class RuntimeError extends Error {
   }
 }
 
-export function executeProgram(program: ProgramNode, options: ExecutionOptions = {}): ExecutionResult {
+export async function executeProgram(
+  program: ProgramNode,
+  options: ExecutionOptions = {}
+): Promise<ExecutionResult> {
   const context = new ExecutionContext();
   const evaluator = new Evaluator(program, context, options);
-  evaluator.run();
+  await evaluator.run();
   return context.finalize(evaluator.haltReason);
 }
 
-export function executeSource(source: string, options: ExecutionOptions = {}): ExecutionResult {
+export async function executeSource(
+  source: string,
+  options: ExecutionOptions = {}
+): Promise<ExecutionResult> {
   throw new Error('executeSource requires parsed program; use parseSource first.');
 }
 
@@ -150,14 +156,14 @@ class Evaluator {
     this.buildLoopBindings();
   }
 
-  public run(): void {
+  public async run(): Promise<void> {
     const { lines } = this.program;
     let lineIndex = 0;
     let statementIndex = 0;
 
     while (lineIndex < lines.length && !this.haltReason) {
       const line = lines[lineIndex]!;
-      const signal = this.executeLine(line, lineIndex, statementIndex);
+      const signal = await this.executeLine(line, lineIndex, statementIndex);
 
       if (!signal) {
         lineIndex += 1;
@@ -178,7 +184,7 @@ class Evaluator {
     }
   }
 
-  private executeLine(
+  private async executeLine(
     line: LineNode,
     lineIndex: number,
     startStatementIndex: number
@@ -186,7 +192,7 @@ class Evaluator {
     for (let i = startStatementIndex; i < line.statements.length; i += 1) {
       const statement = line.statements[i]!;
       this.ensureWithinStepBudget(statement.token);
-      const signal = this.executeStatement(statement, { lineIndex, statementIndex: i });
+      const signal = await this.executeStatement(statement, { lineIndex, statementIndex: i });
       if (signal) {
         return signal;
       }
@@ -194,10 +200,10 @@ class Evaluator {
     return undefined;
   }
 
-  private executeStatement(
+  private async executeStatement(
     statement: StatementNode,
     position: StatementPosition
-  ): StatementSignal | undefined {
+  ): Promise<StatementSignal | undefined> {
     switch (statement.type) {
       case 'LetStatement':
         return this.executeLet(statement);
@@ -222,7 +228,7 @@ class Evaluator {
       case 'EndStatement':
         return { type: 'halt', reason: 'END' };
       case 'ExpressionStatement':
-        this.evaluateExpression(statement.expression);
+        await this.evaluateExpression(statement.expression);
         return undefined;
       default: {
         const exhaustiveCheck: never = statement;
@@ -231,29 +237,32 @@ class Evaluator {
     }
   }
 
-  private executeLet(statement: LetStatementNode): StatementSignal | undefined {
+  private async executeLet(statement: LetStatementNode): Promise<StatementSignal | undefined> {
     const target = this.evaluateAssignmentTarget(statement.target);
-    const value = this.evaluateExpression(statement.value);
+    const value = await this.evaluateExpression(statement.value);
     this.context.setVariable(target.name, value, statement.token);
     return undefined;
   }
 
-  private executeAssignment(statement: AssignmentStatementNode): StatementSignal | undefined {
+  private async executeAssignment(
+    statement: AssignmentStatementNode
+  ): Promise<StatementSignal | undefined> {
     const target = this.evaluateAssignmentTarget(statement.target);
-    const value = this.evaluateExpression(statement.value);
+    const value = await this.evaluateExpression(statement.value);
     this.context.setVariable(target.name, value, statement.token);
     return undefined;
   }
 
-  private executePrint(statement: PrintStatementNode): StatementSignal | undefined {
+  private async executePrint(statement: PrintStatementNode): Promise<StatementSignal | undefined> {
     if (statement.arguments.length === 0) {
       this.context.writePrint([''], statement.trailing ?? 'newline');
       return undefined;
     }
 
     const segments: string[] = [];
-    statement.arguments.forEach((arg, index) => {
-      const value = this.evaluateExpression(arg.expression);
+    for (let index = 0; index < statement.arguments.length; index += 1) {
+      const arg = statement.arguments[index]!;
+      const value = await this.evaluateExpression(arg.expression);
       segments.push(runtimeValueToString(value));
       if (arg.separator === 'comma') {
         segments.push('\t');
@@ -262,20 +271,20 @@ class Evaluator {
       } else if (index < statement.arguments.length - 1) {
         segments.push(' ');
       }
-    });
+    }
 
     this.context.writePrint(segments, statement.trailing ?? 'newline');
     return undefined;
   }
 
-  private executeIf(
+  private async executeIf(
     statement: IfStatementNode,
     position: StatementPosition
-  ): StatementSignal | undefined {
-    const condition = this.evaluateExpression(statement.condition);
+  ): Promise<StatementSignal | undefined> {
+    const condition = await this.evaluateExpression(statement.condition);
     const branch = truthy(condition) ? statement.thenBranch : statement.elseBranch ?? [];
     for (const nested of branch) {
-      const signal = this.executeStatement(nested, position);
+      const signal = await this.executeStatement(nested, position);
       if (signal) {
         return signal;
       }
@@ -283,8 +292,8 @@ class Evaluator {
     return undefined;
   }
 
-  private executeGoto(statement: GotoStatementNode): StatementSignal {
-    const target = this.evaluateExpression(statement.target);
+  private async executeGoto(statement: GotoStatementNode): Promise<StatementSignal> {
+    const target = await this.evaluateExpression(statement.target);
     const lineNumber = toLineNumber(target, statement.token);
     const index = this.lineIndexByNumber.get(lineNumber);
     if (index === undefined) {
@@ -300,7 +309,7 @@ class Evaluator {
     throw new RuntimeError('Member assignment is not supported yet', target.property.token);
   }
 
-  private evaluateExpression(expression: ExpressionNode): RuntimeValue {
+  private async evaluateExpression(expression: ExpressionNode): Promise<RuntimeValue> {
     switch (expression.type) {
       case 'NumberLiteral':
         return expression.value;
@@ -325,8 +334,8 @@ class Evaluator {
     }
   }
 
-  private evaluateMemberExpression(expression: MemberExpressionNode): RuntimeValue {
-    const objectValue = this.evaluateExpression(expression.object);
+  private async evaluateMemberExpression(expression: MemberExpressionNode): Promise<RuntimeValue> {
+    const objectValue = await this.evaluateExpression(expression.object);
 
     if (isHostNamespace(objectValue)) {
       const member = objectValue.getMember(expression.property.name);
@@ -342,14 +351,14 @@ class Evaluator {
     throw new RuntimeError('Property access is not supported for this value', expression.property.token);
   }
 
-  private evaluateCallExpression(expression: CallExpressionNode): RuntimeValue {
-    const callee = this.evaluateExpression(expression.callee);
-    const args = expression.args.map((arg) => this.evaluateExpression(arg));
+  private async evaluateCallExpression(expression: CallExpressionNode): Promise<RuntimeValue> {
+    const callee = await this.evaluateExpression(expression.callee);
+    const args = await Promise.all(expression.args.map((arg) => this.evaluateExpression(arg)));
     return this.invokeCallable(callee, args, expression.closingParen);
   }
 
-  private evaluateUnary(expression: UnaryExpressionNode): RuntimeValue {
-    const value = this.evaluateExpression(expression.operand);
+  private async evaluateUnary(expression: UnaryExpressionNode): Promise<RuntimeValue> {
+    const value = await this.evaluateExpression(expression.operand);
     const operator = expression.operator.lexeme.toUpperCase();
 
     if (operator === '+') {
@@ -367,9 +376,9 @@ class Evaluator {
     throw new RuntimeError(`Unsupported unary operator '${expression.operator.lexeme}'`, expression.operator);
   }
 
-  private evaluateBinary(expression: BinaryExpressionNode): RuntimeValue {
-    const left = this.evaluateExpression(expression.left);
-    const right = this.evaluateExpression(expression.right);
+  private async evaluateBinary(expression: BinaryExpressionNode): Promise<RuntimeValue> {
+    const left = await this.evaluateExpression(expression.left);
+    const right = await this.evaluateExpression(expression.right);
     const operator = expression.operator.lexeme.toUpperCase();
 
     switch (operator) {
@@ -487,15 +496,15 @@ class Evaluator {
     return undefined;
   }
 
-  private executeFor(
+  private async executeFor(
     statement: ForStatementNode,
     position: StatementPosition
-  ): StatementSignal | undefined {
+  ): Promise<StatementSignal | undefined> {
     const iteratorName = statement.iterator.name;
-    const startValue = toNumber(this.evaluateExpression(statement.start), statement.token);
-    const endValue = toNumber(this.evaluateExpression(statement.end), statement.token);
+    const startValue = toNumber(await this.evaluateExpression(statement.start), statement.token);
+    const endValue = toNumber(await this.evaluateExpression(statement.end), statement.token);
     const stepValue = statement.step
-      ? toNumber(this.evaluateExpression(statement.step), statement.token)
+      ? toNumber(await this.evaluateExpression(statement.step), statement.token)
       : 1;
 
     if (stepValue === 0) {
@@ -538,10 +547,10 @@ class Evaluator {
     return undefined;
   }
 
-  private executeNext(
+  private async executeNext(
     statement: NextStatementNode,
     position: StatementPosition
-  ): StatementSignal | undefined {
+  ): Promise<StatementSignal | undefined> {
     if (this.forStack.length === 0) {
       throw new RuntimeError('NEXT without FOR', statement.token);
     }
@@ -580,12 +589,12 @@ class Evaluator {
     return undefined;
   }
 
-  private executeGosub(
+  private async executeGosub(
     statement: GosubStatementNode,
     position: StatementPosition
-  ): StatementSignal {
+  ): Promise<StatementSignal> {
     this.ensureCallDepthWithinBudget(statement.token);
-    const target = this.evaluateExpression(statement.target);
+    const target = await this.evaluateExpression(statement.target);
     const lineNumber = toLineNumber(target, statement.token);
     const lineIndex = this.lineIndexByNumber.get(lineNumber);
     if (lineIndex === undefined) {
@@ -633,10 +642,14 @@ class Evaluator {
     return this.context.getVariable(identifier.name);
   }
 
-  private invokeCallable(callee: RuntimeValue, args: RuntimeValue[], token: Token): RuntimeValue {
+  private async invokeCallable(
+    callee: RuntimeValue,
+    args: RuntimeValue[],
+    token: Token
+  ): Promise<RuntimeValue> {
     if (isHostFunction(callee)) {
       try {
-        return callee.invoke(args, this.makeHostFunctionContext(token));
+        return await callee.invoke(args, this.makeHostFunctionContext(token));
       } catch (error) {
         throw this.wrapHostError(error, token);
       }
