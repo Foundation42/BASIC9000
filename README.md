@@ -15,7 +15,9 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - **Retro CRT terminal** aesthetic with authentic green phosphor glow
 
 ### Language Features
-- 📝 **Core Statements**: LET, PRINT, IF/THEN/ELSE, FOR/NEXT, WHILE/WEND
+- 📝 **Core Statements**: LET, PRINT, IF/THEN/ELSE/END IF, FOR/NEXT, WHILE/WEND
+- 🔢 **Classic Math Functions**: SIN, COS, TAN, ATN, SQR, ABS, INT, RND, SGN, EXP, LOG
+- 📐 **String Functions**: MID$, LEFT$, RIGHT$, INSTR, STR$, CHR$, VAL, ASC, LEN, SPACE$, STRING$
 - 🌐 **HTTP Namespace**: GET, POST, STATUS with automatic HTTPS
 - 📊 **JSON Support**: Parse, stringify, and query JSON data
 - 📁 **File System**: Read, write, append, delete files
@@ -24,6 +26,7 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - 🚀 **Concurrency**: SPAWN routines with message passing
 - 🎨 **Terminal Control**: Clear screen, status bar, overlays
 - 🤖 **AI Integration**: OpenAI, Anthropic, and OpenAI-compatible LLMs
+- 🖼️ **Canvas Graphics**: 2D drawing API with 70+ functions including transparency
 
 ## 🔐 Secure Configuration
 
@@ -80,6 +83,12 @@ READY> PRINT ARRAY.SORT(nums)
 | **Ctrl+H** | Toggle syntax highlighting |
 | **Ctrl+C** | Cancel current line |
 | **↑/↓** | Navigate command history |
+
+### Running Programs
+```basic
+RUN filename.bas     ' Load and execute a .bas file
+RUN demos/canvas-retro-demo.bas  ' Run from subdirectory
+```
 
 ## 📚 Language Reference
 
@@ -240,6 +249,49 @@ FS.APPEND("log.txt", TIME.NOW() + " - Event logged")
 110 PRINT HTTP.GET("wttr.in/?format=3")
 120 RETURN
 ```
+
+### Canvas Graphics
+
+![Canvas Graphics Demo](CANVAS.png)
+
+![Spirograph Mathematical Art](SPIROGRAPH.png)
+
+BASIC9000 includes a full 2D graphics system with over 70 drawing functions!
+
+```basic
+REM Create and show a canvas
+LET canvas = CANVAS.CREATE(800, 600)
+CANVAS.POSITION(canvas, 50, 50)
+CANVAS.SHOW(canvas)
+
+REM Draw retro-styled graphics
+CANVAS.COLOR(canvas, "#00ff00")  ' Green phosphor color
+CANVAS.FONT(canvas, "24px monospace")
+CANVAS.TEXT(canvas, "BASIC9000", 400, 50)
+
+REM Draw shapes
+CANVAS.COLOR(canvas, "red")
+CANVAS.FILLCIRCLE(canvas, 200, 300, 50)
+CANVAS.COLOR(canvas, "blue")
+CANVAS.RECT(canvas, 100, 200, 100, 100)
+
+REM Run demos
+RUN demos/canvas-retro-demo.bas  ' Full retro computer visualization
+RUN demos/canvas-animation.bas   ' Bouncing ball physics
+RUN demos/canvas-paint.bas       ' Interactive paint program
+RUN demos/canvas-spirograph.bas  ' Mathematical spirograph art
+```
+
+**Canvas Features:**
+- 🎨 Full drawing API (shapes, lines, curves, text)
+- 🖼️ Image loading and manipulation
+- 🌈 Gradients and patterns
+- 🔄 Transformations (rotate, scale, translate)
+- 🖱️ Mouse interaction support
+- 📐 Multiple canvases with layering
+- ⚡ Hardware-accelerated rendering
+- 🌟 Transparency with GLOBALPHA
+- 📊 Mathematical art and visualizations
 
 ### AI Integration
 

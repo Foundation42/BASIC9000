@@ -144,9 +144,106 @@ function showOverlay(text, duration) {
 }
 
 async function executeBuffer() {
-  const command = buffer;
+  const command = buffer.trim();
   term.write('\r\n');
   buffer = '';
+
+  // Handle special RUN command for loading .bas files
+  if (command.toUpperCase().startsWith('RUN ')) {
+    const filename = command.substring(4).trim().replace(/^["']|["']$/g, '');
+
+    executing = true;
+    try {
+      // Use a simpler approach - execute commands in sequence
+      // First, try to read the file
+      term.write(`Loading ${filename}...\r\n`);
+
+      // Build list of paths to try
+      const searchPaths = [];
+
+      // If it's an absolute path, just use it
+      if (filename.startsWith('/')) {
+        searchPaths.push(filename);
+      } else {
+        // For relative paths, try multiple locations
+        searchPaths.push(filename);
+        searchPaths.push(`../../demos/${filename}`);
+        searchPaths.push(`../../${filename}`);
+        searchPaths.push(`demos/${filename}`);
+
+        // If no .bas extension, try adding it
+        if (!filename.endsWith('.bas')) {
+          searchPaths.push(`${filename}.bas`);
+          searchPaths.push(`../../demos/${filename}.bas`);
+          searchPaths.push(`../../${filename}.bas`);
+          searchPaths.push(`demos/${filename}.bas`);
+        }
+      }
+
+      let fileContent = null;
+      let successPath = null;
+
+      // Try each path until we find the file
+      for (const tryPath of searchPaths) {
+        // Use FS.READ with LET to capture the content
+        const readCommand = `LET fileContent$ = FS.READ("${tryPath}")`;
+        const readResponse = await window.basic9000.execute(readCommand);
+
+        if (readResponse.ok) {
+          // Now retrieve the content by printing the variable
+          const getCommand = `PRINT fileContent$`;
+          const getResponse = await window.basic9000.execute(getCommand);
+
+          if (getResponse.ok && getResponse.outputs && getResponse.outputs.length > 0) {
+            fileContent = getResponse.outputs.join('\n');
+            successPath = tryPath;
+            break;
+          }
+        }
+      }
+
+      if (!fileContent) {
+        term.write(`? Error: File not found: ${filename}\r\n`);
+        term.write(`? Searched in: current dir, ../../demos/, ../../\r\n`);
+        showPrompt();
+        executing = false;
+        return;
+      }
+
+      term.write(`Running ${filename}...\r\n`);
+
+      // Execute the loaded program
+      const runResponse = await window.basic9000.execute(fileContent);
+
+      if (runResponse.ok) {
+        if (runResponse.outputs?.length) {
+          runResponse.outputs.forEach((line) => {
+            const lines = String(line).split('\n');
+            lines.forEach((l, i) => {
+              if (i === lines.length - 1 && l === '') return;
+              const highlighted = highlighter.highlightLine(l);
+              term.writeln(highlighted);
+            });
+          });
+        }
+        if (runResponse.halted) {
+          term.writeln(`(HALTED: ${runResponse.halted})`);
+        }
+      } else {
+        const errorText = String(runResponse.error);
+        const lines = errorText.split('\n');
+        lines.forEach((line) => {
+          term.writeln(`? ${line}`);
+        });
+      }
+    } catch (error) {
+      term.write(`? Error: ${error.message}\r\n`);
+    } finally {
+      executing = false;
+      showPrompt();
+    }
+    return;
+  }
   history.push(command);
   historyIndex = history.length;
 

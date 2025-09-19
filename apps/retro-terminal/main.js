@@ -7,11 +7,27 @@ const sessionPromise = (async () => {
     InterpreterSession,
     createDefaultHostEnvironment,
     createNamespace,
-    createFunction
+    createFunction,
+    getAndClearPendingCanvasCommands
   } = await import('../../dist/index.js');
 
   const env = createDefaultHostEnvironment();
   env.register('TERMINAL', createTerminalNamespace(createNamespace, createFunction));
+
+  // Set up Canvas bridge
+  global.__canvasBridge = {
+    send: (command, args) => {
+      if (terminalWindow && !terminalWindow.isDestroyed()) {
+        terminalWindow.webContents.send('canvas:command', { command, args });
+      }
+    },
+    sendSync: (command, args) => {
+      // For synchronous commands, we'll need to implement a different approach
+      // For now, return null
+      return null;
+    }
+  };
+
   const session = new InterpreterSession({ hostEnvironment: env });
   try {
     const bootScript = await fs.promises.readFile(path.join(__dirname, 'boot.bas'), 'utf8').catch(() => null);
@@ -49,7 +65,17 @@ ipcMain.handle('repl:execute', async (_event, source) => {
   }
   try {
     const session = await sessionPromise;
+    const { getAndClearPendingCanvasCommands } = await import('../../dist/index.js');
     const result = await session.run(command);
+
+    // Process any pending canvas commands
+    const canvasCommands = getAndClearPendingCanvasCommands();
+    for (const cmd of canvasCommands) {
+      if (terminalWindow && !terminalWindow.isDestroyed()) {
+        terminalWindow.webContents.send('canvas:command', cmd);
+      }
+    }
+
     return {
       ok: true,
       outputs: Array.from(result.outputs),
@@ -65,6 +91,20 @@ ipcMain.handle('repl:reset', async () => {
   const session = await sessionPromise;
   session.reset();
   return { ok: true };
+});
+
+// Canvas IPC handlers
+ipcMain.on('canvas-command', (event, { command, args }) => {
+  // Forward canvas commands to the renderer
+  if (terminalWindow && !terminalWindow.isDestroyed()) {
+    terminalWindow.webContents.send('canvas:command', { command, args });
+  }
+});
+
+ipcMain.on('canvas-command-sync', (event, { command, args }) => {
+  // Handle synchronous canvas commands
+  // The renderer will handle these and return values
+  event.returnValue = null; // Default return value
 });
 
 function createTerminalNamespace(createNamespace, createFunction) {

@@ -209,11 +209,34 @@ class Parser {
   private parseIfStatement(keyword: Token): IfStatementNode {
     const condition = this.parseExpression();
     this.consumeKeyword('THEN');
-    const thenBranch = this.parseInlineStatements(['ELSE']);
+
+    // Check if this is a multi-line IF block (THEN followed by newline)
+    const isBlock = this.check(TokenType.Newline);
+
+    let thenBranch: StatementNode[];
     let elseBranch: StatementNode[] | undefined;
-    if (this.matchKeyword('ELSE')) {
-      elseBranch = this.parseInlineStatements([]);
+
+    if (isBlock) {
+      // Multi-line block IF statement
+      this.match(TokenType.Newline); // Consume the newline after THEN
+      thenBranch = this.parseBlockStatements(['ELSE', 'END']);
+
+      if (this.matchKeyword('ELSE')) {
+        this.match(TokenType.Newline); // Consume optional newline after ELSE
+        elseBranch = this.parseBlockStatements(['END']);
+      }
+
+      // Consume END IF
+      this.consumeKeyword('END');
+      this.consumeKeyword('IF');
+    } else {
+      // Single-line IF statement
+      thenBranch = this.parseInlineStatements(['ELSE']);
+      if (this.matchKeyword('ELSE')) {
+        elseBranch = this.parseInlineStatements([]);
+      }
     }
+
     return { type: 'IfStatement', token: keyword, condition, thenBranch, elseBranch };
   }
 
@@ -260,6 +283,38 @@ class Parser {
       }
       statements.push(this.parseStatement());
     }
+    return statements;
+  }
+
+  private parseBlockStatements(stopKeywords: string[]): StatementNode[] {
+    const statements: StatementNode[] = [];
+
+    // Skip any leading newlines
+    while (this.match(TokenType.Newline)) {
+      // Skip empty lines
+    }
+
+    while (!this.isAtEnd() && !this.checkUpcomingKeyword(stopKeywords)) {
+      // Skip empty lines
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      // Parse the line number if present
+      if (this.check(TokenType.Number) && this.atLineStart) {
+        this.advance(); // Skip line number in block contexts
+        const statement = this.parseStatement();
+        statements.push(statement);
+      } else {
+        statements.push(this.parseStatement());
+      }
+
+      // Consume the newline after the statement
+      if (!this.isAtEnd()) {
+        this.match(TokenType.Newline);
+      }
+    }
+
     return statements;
   }
 

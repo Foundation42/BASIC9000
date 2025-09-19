@@ -773,7 +773,8 @@ interface ForFrame {
 }
 
 function normalizeIdentifier(name: string): string {
-  return name.toUpperCase();
+  // Keep case sensitivity for modern BASIC
+  return name;
 }
 
 function defaultValueForIdentifier(name: string): RuntimeValue {

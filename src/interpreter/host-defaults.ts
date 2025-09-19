@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import WebSocket from 'ws';
 import { createAINamespace } from './ai-namespace.js';
+import { createCanvasNamespace } from './canvas-namespace.js';
 import { createConfigNamespace } from './config-namespace.js';
 
 import {
@@ -17,6 +18,105 @@ import type { RuntimeValue } from './runtime-values.js';
 
 export function createDefaultHostEnvironment(): HostEnvironment {
   const env = new HostEnvironment();
+
+  // Register core BASIC functions (global, not namespaced)
+  env.register('STR$', createFunction('STR$', (args) => {
+    const value = args[0];
+    if (value === undefined) return '';
+    return String(value);
+  }));
+
+  env.register('CHR$', createFunction('CHR$', (args) => {
+    const code = requireNumberArg('CHR$', args, 0);
+    return String.fromCharCode(code);
+  }));
+
+  env.register('ASC', createFunction('ASC', (args) => {
+    const str = requireStringArg('ASC', args, 0);
+    return str.length > 0 ? str.charCodeAt(0) : 0;
+  }));
+
+  env.register('VAL', createFunction('VAL', (args) => {
+    const str = requireStringArg('VAL', args, 0);
+    const num = parseFloat(str);
+    return isNaN(num) ? 0 : num;
+  }));
+
+  env.register('LEN', createFunction('LEN', (args) => {
+    const str = requireStringArg('LEN', args, 0);
+    return str.length;
+  }));
+
+  // Classic BASIC math functions (global)
+  env.register('SIN', createFunction('SIN', (args) => Math.sin(requireNumberArg('SIN', args, 0))));
+  env.register('COS', createFunction('COS', (args) => Math.cos(requireNumberArg('COS', args, 0))));
+  env.register('TAN', createFunction('TAN', (args) => Math.tan(requireNumberArg('TAN', args, 0))));
+  env.register('ATN', createFunction('ATN', (args) => Math.atan(requireNumberArg('ATN', args, 0))));
+  env.register('SQR', createFunction('SQR', (args) => Math.sqrt(requireNumberArg('SQR', args, 0))));
+  env.register('ABS', createFunction('ABS', (args) => Math.abs(requireNumberArg('ABS', args, 0))));
+  env.register('INT', createFunction('INT', (args) => Math.floor(requireNumberArg('INT', args, 0))));
+  env.register('RND', createFunction('RND', (args) => {
+    // Classic BASIC RND function
+    const arg = args.length > 0 ? requireNumberArg('RND', args, 0) : 1;
+    if (arg < 0) {
+      // Seed (not implemented, just return random)
+      return Math.random();
+    } else if (arg === 0) {
+      // Return last random (not implemented, just return random)
+      return Math.random();
+    } else {
+      // Return random 0 to 1
+      return Math.random();
+    }
+  }));
+  env.register('SGN', createFunction('SGN', (args) => {
+    const num = requireNumberArg('SGN', args, 0);
+    return num > 0 ? 1 : num < 0 ? -1 : 0;
+  }));
+  env.register('EXP', createFunction('EXP', (args) => Math.exp(requireNumberArg('EXP', args, 0))));
+  env.register('LOG', createFunction('LOG', (args) => Math.log(requireNumberArg('LOG', args, 0))));
+
+  // Classic BASIC string manipulation functions
+  env.register('MID$', createFunction('MID$', (args) => {
+    const str = requireStringArg('MID$', args, 0);
+    const start = Math.max(1, Math.floor(requireNumberArg('MID$', args, 1))); // BASIC uses 1-based indexing
+    const length = args.length >= 3 ? Math.max(0, Math.floor(requireNumberArg('MID$', args, 2))) : str.length;
+    return str.substring(start - 1, start - 1 + length);
+  }));
+
+  env.register('LEFT$', createFunction('LEFT$', (args) => {
+    const str = requireStringArg('LEFT$', args, 0);
+    const count = Math.max(0, Math.floor(requireNumberArg('LEFT$', args, 1)));
+    return str.substring(0, count);
+  }));
+
+  env.register('RIGHT$', createFunction('RIGHT$', (args) => {
+    const str = requireStringArg('RIGHT$', args, 0);
+    const count = Math.max(0, Math.floor(requireNumberArg('RIGHT$', args, 1)));
+    return count === 0 ? '' : str.substring(str.length - count);
+  }));
+
+  env.register('INSTR', createFunction('INSTR', (args) => {
+    const str = requireStringArg('INSTR', args, 0);
+    const search = requireStringArg('INSTR', args, 1);
+    const start = args.length >= 3 ? Math.max(1, Math.floor(requireNumberArg('INSTR', args, 2))) : 1;
+    const result = str.indexOf(search, start - 1);
+    return result === -1 ? 0 : result + 1; // BASIC uses 1-based indexing, 0 = not found
+  }));
+
+  env.register('SPACE$', createFunction('SPACE$', (args) => {
+    const count = Math.max(0, Math.floor(requireNumberArg('SPACE$', args, 0)));
+    return ' '.repeat(count);
+  }));
+
+  env.register('STRING$', createFunction('STRING$', (args) => {
+    const count = Math.max(0, Math.floor(requireNumberArg('STRING$', args, 0)));
+    const char = requireStringArg('STRING$', args, 1);
+    if (char.length === 0) return '';
+    return char[0].repeat(count);
+  }));
+
+  // Register namespaces
   env.register('SYS', createSystemNamespace());
   env.register('MATH', createMathNamespace());
   env.register('RANDOM', createRandomNamespace());
@@ -28,6 +128,7 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   env.register('WS', createWebSocketNamespace());
   env.register('JSON', createJsonNamespace());
   env.register('AI', createAINamespace());
+  env.register('CANVAS', createCanvasNamespace());
   env.register('CONFIG', createConfigNamespace());
   return env;
 }

@@ -100,5 +100,7 @@ class SimpleHostFunction implements HostFunctionValue {
 }
 
 function normalize(name: string): string {
-  return name.toUpperCase();
+  // Keep case sensitivity - namespaces should stay uppercase
+  // but we don't force normalize for lookups
+  return name;
 }
