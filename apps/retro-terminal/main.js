@@ -1,9 +1,10 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 
-const { InterpreterSession } = require('../../dist/index.js');
-
-const session = new InterpreterSession();
+const sessionPromise = (async () => {
+  const { InterpreterSession } = await import('../../dist/index.js');
+  return new InterpreterSession();
+})();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -27,6 +28,7 @@ ipcMain.handle('repl:execute', async (_event, source) => {
     return { ok: true, outputs: [], variables: {}, halted: null };
   }
   try {
+    const session = await sessionPromise;
     const result = await session.run(command);
     return {
       ok: true,
@@ -39,7 +41,8 @@ ipcMain.handle('repl:execute', async (_event, source) => {
   }
 });
 
-ipcMain.handle('repl:reset', () => {
+ipcMain.handle('repl:reset', async () => {
+  const session = await sessionPromise;
   session.reset();
   return { ok: true };
 });
