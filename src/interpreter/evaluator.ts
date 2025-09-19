@@ -16,6 +16,7 @@ import type {
   PrintStatementNode,
   ProgramNode,
   ReturnStatementNode,
+  SpawnStatementNode,
   StatementNode,
   UnaryExpressionNode
 } from './ast.js';
@@ -180,7 +181,6 @@ class Evaluator {
   private readonly forBindings = new Map<string, ForBinding>();
   private readonly forStack: ForFrame[] = [];
   private readonly gosubStack: StatementPointer[] = [];
-  private readonly routines = new Set<string>();
   private readonly hostEnvironment: HostEnvironment;
   private stepCount = 0;
   public haltReason: 'END' | 'STOP' | undefined;

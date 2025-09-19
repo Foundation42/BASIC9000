@@ -17,6 +17,7 @@ import type {
   MemberExpressionNode,
   NextStatementNode,
   NumberLiteralNode,
+  SpawnStatementNode,
   PrintArgument,
   PrintStatementNode,
   ProgramNode,
