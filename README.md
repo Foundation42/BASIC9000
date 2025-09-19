@@ -23,6 +23,7 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - 🔧 **System Utilities**: Platform info, sleep, ticks
 - 🚀 **Concurrency**: SPAWN routines with message passing
 - 🎨 **Terminal Control**: Clear screen, status bar, overlays
+- 🤖 **AI Integration**: OpenAI, Anthropic, and OpenAI-compatible LLMs
 
 ## 🚀 Quick Start
 
@@ -228,6 +229,28 @@ FS.APPEND("log.txt", TIME.NOW() + " - Event logged")
 100 REM Weather subroutine
 110 PRINT HTTP.GET("wttr.in/?format=3")
 120 RETURN
+```
+
+### AI Integration
+```basic
+REM Configure AI (OpenAI, Anthropic, or local server)
+AI.KEY "openai", your_api_key$
+LET assistant = AI.CREATE("openai", "gpt-3.5-turbo")
+
+REM Or use a local Ollama server
+LET local_ai = AI.CREATE("generic", "llama2", "http://localhost:11434/v1")
+
+REM Configure and use
+AI.SYSTEM assistant, "You are a helpful BASIC programming tutor"
+AI.TEMPERATURE assistant, 0.7
+
+LET response$ = AI.GENERATE(assistant, "Explain loops in BASIC")
+PRINT response$
+
+REM Interactive conversation
+AI.USER assistant, "How do I read a file?"
+LET answer$ = AI.ASSISTANT(assistant)
+PRINT answer$
 ```
 
 ## 🤝 Contributing

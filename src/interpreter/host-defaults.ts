@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import WebSocket from 'ws';
+import { createAINamespace } from './ai-namespace.js';
 
 import {
   HostEnvironment,
@@ -25,6 +26,7 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   env.register('HTTP', createHttpNamespace());
   env.register('WS', createWebSocketNamespace());
   env.register('JSON', createJsonNamespace());
+  env.register('AI', createAINamespace());
   return env;
 }
 
@@ -629,7 +631,7 @@ function requireJsonHandle(functionName: string, args: RuntimeValue[], index: nu
   throw new Error(`${functionName} argument #${index + 1} must be a JSON handle or JSON string`);
 }
 
-function requireNumberArg(functionName: string, args: RuntimeValue[], index: number): number {
+export function requireNumberArg(functionName: string, args: RuntimeValue[], index: number): number {
   if (index >= args.length) {
     throw new Error(`${functionName} expects argument #${index + 1}`);
   }
@@ -649,7 +651,7 @@ function requireNumberValue(functionName: string, value: RuntimeValue, index: nu
   throw new Error(`${functionName} argument #${index + 1} must be numeric`);
 }
 
-function requireStringArg(functionName: string, args: RuntimeValue[], index: number): string {
+export function requireStringArg(functionName: string, args: RuntimeValue[], index: number): string {
   if (index >= args.length) {
     throw new Error(`${functionName} expects argument #${index + 1}`);
   }
