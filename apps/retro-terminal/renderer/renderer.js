@@ -28,6 +28,7 @@ term.loadAddon(fitAddon);
 term.loadAddon(linksAddon);
 
 const container = document.getElementById('terminal');
+const statusBar = document.getElementById('status-bar');
 term.open(container);
 fitAddon.fit();
 
@@ -39,6 +40,29 @@ let buffer = '';
 const history = [];
 let historyIndex = -1;
 let executing = false;
+
+window.basic9000.onAction((payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
+
+  switch (payload.type) {
+    case 'write':
+      term.writeln(String(payload.text ?? ''));
+      break;
+    case 'clear':
+      clearScreen();
+      break;
+    case 'status':
+      setStatus(String(payload.text ?? ''));
+      break;
+    case 'bell':
+      term.write('\u0007');
+      break;
+    default:
+      break;
+  }
+});
 
 function writeBanner() {
   term.write('\x1b[?25l');
@@ -67,6 +91,12 @@ function clearScreen() {
   writeBanner();
   term.write(PROMPT);
   buffer = '';
+}
+
+function setStatus(text) {
+  if (statusBar) {
+    statusBar.textContent = text || 'READY';
+  }
 }
 
 async function executeBuffer() {
@@ -174,4 +204,5 @@ term.onData(async (data) => {
 });
 
 writeBanner();
+setStatus('READY');
 term.write(PROMPT);

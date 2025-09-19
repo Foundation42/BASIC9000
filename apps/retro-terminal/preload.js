@@ -8,5 +8,8 @@ contextBridge.exposeInMainWorld('basic9000', {
   reset: () => ipcRenderer.invoke('repl:reset'),
   Terminal,
   FitAddon,
-  WebLinksAddon
+  WebLinksAddon,
+  onAction: (listener) => {
+    ipcRenderer.on('terminal:action', (_event, payload) => listener?.(payload));
+  }
 });
