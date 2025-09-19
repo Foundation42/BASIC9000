@@ -33,11 +33,12 @@ Edit `boot.bas` or run your own programs via the REPL prompt. Host APIs such as 
 | `ARRAY`    | `SORT(array)`, `REVERSE(array)`, `JOIN(array, delimiter)` |
 | `STR`      | `FIND`, `LEFT`, `RIGHT`, `MID`, `REPLACE`, `REVERSE` |
 | `FS`       | `READ`, `WRITE`, `APPEND`, `DELETE`, `LIST` |
+| `SPAWN`    | `SPAWN name` (registers routine, returns status message) |
 
 (See `src/interpreter/host-defaults.ts` for the full catalog.)
 
 ## Ideas
 
-- Drop a BASIC script into `boot.bas` that spawns matrix rain, status monitors, or overlay animations.
+- Drop a BASIC script into `boot.bas` that spawns matrix rain, status monitors, or overlay animations via `SPAWN`.
 - Use `SYS.SLEEP` inside loops for non-blocking style delays (thanks to async host bridge).
 - Combine `HTTP`, `JSON`, and `TERMINAL` to surface live API data in the CRT.
