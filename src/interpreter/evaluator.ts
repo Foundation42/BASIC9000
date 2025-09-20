@@ -1239,7 +1239,12 @@ class Evaluator {
           value = null;
         }
 
-        this.context.setVariable(param.name.name, value, token);
+        // Use type-aware setting if parameter has type annotation
+        if (param.typeAnnotation) {
+          this.context.setVariableWithType(param.name.name, value, param.typeAnnotation.name, token);
+        } else {
+          this.context.setVariable(param.name.name, value, token);
+        }
       }
 
       // Execute function body
