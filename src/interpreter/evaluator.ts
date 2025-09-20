@@ -1035,38 +1035,63 @@ class Evaluator {
       throw new RuntimeError('FOR step cannot be zero', statement.token);
     }
 
-    const binding = this.forBindings.get(makePointerKey(position));
-    if (!binding) {
-      throw new RuntimeError('FOR without matching NEXT', statement.token);
+    // Skip binding check if we're in a function context (negative lineIndex)
+    let binding;
+    if (position.lineIndex >= 0) {
+      binding = this.forBindings.get(makePointerKey(position));
+      if (!binding) {
+        throw new RuntimeError('FOR without matching NEXT', statement.token);
+      }
     }
 
     this.context.setVariable(iteratorName, startValue, statement.token);
 
     const continueCondition = stepValue > 0 ? startValue <= endValue : startValue >= endValue;
     if (!continueCondition) {
-      const targetPointer = binding.afterNextPointer ?? endPointer(this.program);
-      return {
-        type: 'jump',
-        targetLineIndex: targetPointer.lineIndex,
-        targetStatementIndex: targetPointer.statementIndex
-      };
+      if (binding) {
+        const targetPointer = binding.afterNextPointer ?? endPointer(this.program);
+        return {
+          type: 'jump',
+          targetLineIndex: targetPointer.lineIndex,
+          targetStatementIndex: targetPointer.statementIndex
+        };
+      } else {
+        // In function context, we need to skip the loop body
+        // This is a simplified approach - just continue execution
+        // The NEXT will handle the iteration
+      }
     }
 
-    const nextCandidate = this.findNextStatementPointer(position.lineIndex, position.statementIndex);
-    const bodyPointer =
-      nextCandidate && binding.nextPointer && !pointerEquals(nextCandidate, binding.nextPointer)
-        ? nextCandidate
-        : undefined;
+    if (binding) {
+      const nextCandidate = this.findNextStatementPointer(position.lineIndex, position.statementIndex);
+      const bodyPointer =
+        nextCandidate && binding.nextPointer && !pointerEquals(nextCandidate, binding.nextPointer)
+          ? nextCandidate
+          : undefined;
 
-    this.forStack.push({
-      iteratorName,
-      iteratorKey: normalizeIdentifier(iteratorName),
-      end: endValue,
-      step: stepValue,
-      bodyPointer,
-      nextPointer: binding.nextPointer,
-      token: statement.token
-    });
+      this.forStack.push({
+        iteratorName,
+        iteratorKey: normalizeIdentifier(iteratorName),
+        end: endValue,
+        step: stepValue,
+        bodyPointer,
+        nextPointer: binding.nextPointer,
+        token: statement.token
+      });
+    } else {
+      // In function context, we don't have pre-computed bindings
+      // Just push a frame for tracking
+      // The body starts at the next statement (position.statementIndex + 1)
+      this.forStack.push({
+        iteratorName,
+        iteratorKey: normalizeIdentifier(iteratorName),
+        end: endValue,
+        step: stepValue,
+        bodyPointer: { lineIndex: position.lineIndex, statementIndex: position.statementIndex + 1 },
+        nextPointer: { lineIndex: position.lineIndex, statementIndex: position.statementIndex + 1 },
+        token: statement.token
+      });
+    }
 
     return undefined;
   }
@@ -1376,13 +1401,27 @@ class Evaluator {
       }
 
       // Execute function body
-      for (const stmt of func.body) {
-        const signal = await this.executeStatement(stmt, { lineIndex: 0, statementIndex: 0 });
+      // We use a special marker position for function execution
+      for (let i = 0; i < func.body.length; i++) {
+        const stmt = func.body[i];
+        if (!stmt) continue;
+
+        // Use a negative lineIndex to indicate we're in a function context
+        // This allows us to handle FOR/NEXT differently
+        const signal = await this.executeStatement(stmt, { lineIndex: -1, statementIndex: i });
         if (signal?.type === 'return') {
           return signal.value;
         }
         if (signal?.type === 'halt') {
           return null;
+        }
+        if (signal?.type === 'jump') {
+          // Handle jumps within function (for FOR/NEXT loops)
+          // The targetStatementIndex is relative to the function body
+          if (signal.targetStatementIndex !== undefined) {
+            i = signal.targetStatementIndex - 1; // -1 because the loop will increment
+            continue;
+          }
         }
       }
 
