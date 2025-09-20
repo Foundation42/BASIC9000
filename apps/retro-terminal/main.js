@@ -29,14 +29,6 @@ const sessionPromise = (async () => {
   };
 
   const session = new InterpreterSession({ hostEnvironment: env });
-  try {
-    const bootScript = await fs.promises.readFile(path.join(__dirname, 'boot.bas'), 'utf8').catch(() => null);
-    if (bootScript) {
-      await session.run(bootScript);
-    }
-  } catch (error) {
-    console.error('Failed to execute boot script:', error);
-  }
   return session;
 })();
 
@@ -91,6 +83,25 @@ ipcMain.handle('repl:reset', async () => {
   const session = await sessionPromise;
   session.reset();
   return { ok: true };
+});
+
+ipcMain.handle('repl:boot', async () => {
+  try {
+    const session = await sessionPromise;
+    const bootScript = await fs.promises.readFile(path.join(__dirname, 'boot.bas'), 'utf8').catch(() => null);
+    if (bootScript) {
+      const result = await session.run(bootScript);
+      return {
+        ok: true,
+        outputs: Array.from(result.outputs),
+        variables: result.variables,
+        halted: result.halted ?? null
+      };
+    }
+    return { ok: true, outputs: [], variables: {}, halted: null };
+  } catch (error) {
+    return { ok: false, error: formatError(error) };
+  }
 });
 
 // Canvas IPC handlers

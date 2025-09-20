@@ -376,4 +376,18 @@ term.onData(async (data) => {
 
 writeBanner();
 setStatus('READY');
-term.write(PROMPT);
+
+// Run boot script after terminal is ready
+window.basic9000.boot().then(result => {
+  if (result.ok && result.outputs.length > 0) {
+    // Display boot script output
+    result.outputs.forEach(output => {
+      term.writeln(output);
+    });
+    term.writeln(''); // Add blank line after boot output
+  }
+  term.write(PROMPT);
+}).catch(error => {
+  console.error('Boot script failed:', error);
+  term.write(PROMPT);
+});
