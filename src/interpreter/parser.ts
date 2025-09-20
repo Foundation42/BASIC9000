@@ -43,7 +43,8 @@ import type {
   WithStatementNode,
   WithFieldNode,
   SelectCaseStatementNode,
-  CaseClause
+  CaseClause,
+  PropertyStatementNode
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -170,6 +171,11 @@ class Parser {
     if (this.matchKeyword('SUB')) {
       const keyword = this.previous();
       return this.parseSubStatement(keyword);
+    }
+
+    if (this.matchKeyword('PROPERTY')) {
+      const keyword = this.previous();
+      return this.parsePropertyStatement(keyword);
     }
 
     if (this.matchKeyword('EXIT')) {
@@ -672,6 +678,85 @@ class Parser {
       parameters,
       body
     } satisfies SubStatementNode;
+  }
+
+  private parsePropertyStatement(keyword: Token): PropertyStatementNode {
+    // Parse TypeName.PropertyName
+    const typeName = this.parseIdentifier();
+    this.consume(TokenType.Dot, 'Expected . after type name');
+    const name = this.parseIdentifier();
+
+    // Parse (self AS TypeName)
+    this.consume(TokenType.LeftParen, 'Expected ( after property name');
+    const selfParam = this.parsePropertyParameter();
+    this.consume(TokenType.RightParen, 'Expected ) after parameter');
+
+    // Parse AS ReturnType
+    this.consumeKeyword('AS');
+    const returnType = this.parseTypeAnnotation();
+
+    // Parse GET or SET
+    let accessorType: 'GET' | 'SET';
+    if (this.matchKeyword('GET')) {
+      accessorType = 'GET';
+    } else if (this.matchKeyword('SET')) {
+      accessorType = 'SET';
+    } else {
+      throw new ParseError('Expected GET or SET after property return type', this.peek());
+    }
+
+    // Skip newlines
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    // Parse property body
+    const body: StatementNode[] = [];
+    while (!this.isAtEnd()) {
+      if (this.isKeyword('END') && this.peekNextKeyword('PROPERTY')) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      body.push(this.parseStatement());
+    }
+
+    // Consume END PROPERTY
+    if (!this.matchKeyword('END')) {
+      throw new ParseError('Expected END PROPERTY', this.peek());
+    }
+    if (!this.matchKeyword('PROPERTY')) {
+      throw new ParseError('Expected PROPERTY after END', this.peek());
+    }
+
+    return {
+      type: 'PropertyStatement',
+      token: keyword,
+      typeName,
+      name,
+      selfParam,
+      returnType,
+      accessorType,
+      body
+    } satisfies PropertyStatementNode;
+  }
+
+  private parsePropertyParameter(): ParameterNode {
+    const name = this.parseIdentifier();
+    let typeAnnotation: TypeAnnotationNode | undefined;
+
+    if (this.isKeyword('AS')) {
+      this.consumeKeyword('AS');
+      typeAnnotation = this.parseTypeAnnotation();
+    }
+
+    return {
+      name,
+      typeAnnotation
+    };
   }
 
   private parseExitStatement(keyword: Token): ExitStatementNode {

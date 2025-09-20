@@ -29,7 +29,8 @@ import type {
   UnaryExpressionNode,
   WithStatementNode,
   WithFieldNode,
-  SelectCaseStatementNode
+  SelectCaseStatementNode,
+  PropertyStatementNode
 } from './ast.js';
 import {
   HostEnvironment,
@@ -381,6 +382,8 @@ class Evaluator {
         return this.executeFunction(statement);
       case 'SubStatement':
         return this.executeSub(statement);
+      case 'PropertyStatement':
+        return this.executeProperty(statement);
       case 'ExitStatement':
         return this.executeExit(statement);
       case 'WithStatement':
@@ -766,7 +769,22 @@ class Evaluator {
         return objectValue.get(fieldName)!;
       }
 
-      // If not a field, check for UFCS - look for a function with this name
+      // Check for property getter
+      const propertyKey = `${objectValue.typeName}.${fieldName}`;
+      const propertyFunc = this.context.getVariable(`__property_${propertyKey}`);
+
+      if (propertyFunc && typeof propertyFunc === 'object' && propertyFunc !== null &&
+          'kind' in propertyFunc && propertyFunc.kind === 'user-function') {
+        // Properties are evaluated immediately with the object as self
+        return await this.executeUserFunction(
+          propertyFunc as UserFunctionValue,
+          [objectValue],
+          expression.property.token,
+          this.context.saveScope()
+        );
+      }
+
+      // If not a field or property, check for UFCS - look for a function with this name
       const funcValue = this.context.getVariable(fieldName);
       if (funcValue && typeof funcValue === 'object' && funcValue !== null &&
           'kind' in funcValue && funcValue.kind === 'user-function') {
@@ -1184,6 +1202,26 @@ class Evaluator {
       isSub: true
     };
     this.context.setVariable(statement.name.name, subValue, statement.name.token);
+    return undefined;
+  }
+
+  private async executeProperty(statement: PropertyStatementNode): Promise<undefined> {
+    // Store property definition as a special function
+    // Properties are stored with key "TypeName.PropertyName"
+    const propertyKey = `${statement.typeName.name}.${statement.name.name}`;
+
+    const propertyValue: UserFunctionValue = {
+      kind: 'user-function',
+      name: propertyKey,
+      parameters: [statement.selfParam],
+      returnType: statement.returnType,
+      body: statement.body,
+      isAsync: false,
+      isSub: false
+    };
+
+    // Store as a property (not a regular variable)
+    this.context.setVariable(`__property_${propertyKey}`, propertyValue, statement.token);
     return undefined;
   }
 

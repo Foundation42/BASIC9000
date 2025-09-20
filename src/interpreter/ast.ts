@@ -30,6 +30,7 @@ export type StatementNode =
   | FunctionStatementNode
   | SubStatementNode
   | ExitStatementNode
+  | PropertyStatementNode
   | WithStatementNode
   | SelectCaseStatementNode;
 
@@ -168,6 +169,16 @@ export interface ParameterNode {
 export interface ExitStatementNode extends BaseStatementNode {
   readonly type: 'ExitStatement';
   readonly exitType: 'SUB' | 'FUNCTION';
+}
+
+export interface PropertyStatementNode extends BaseStatementNode {
+  readonly type: 'PropertyStatement';
+  readonly typeName: IdentifierNode;
+  readonly name: IdentifierNode;
+  readonly selfParam: ParameterNode;
+  readonly returnType: TypeAnnotationNode;
+  readonly accessorType: 'GET' | 'SET';
+  readonly body: readonly StatementNode[];
 }
 
 export interface WithStatementNode extends BaseStatementNode {

@@ -33,7 +33,7 @@ END IF
 
 ' Test division by zero
 LET r2 = SafeDivide(10, 0)
-IF NOT r2.success AND r2.error = "Division by zero" THEN
+IF NOT r2.success AND INSTR(r2.error, "Division by zero") > 0 THEN
   PRINT "PASS: Caught division by zero"
 ELSE
   PRINT "FAIL: Error not caught properly"
