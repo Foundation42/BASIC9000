@@ -380,9 +380,19 @@ setStatus('READY');
 // Run boot script after terminal is ready
 window.basic9000.boot().then(result => {
   if (result.ok && result.outputs.length > 0) {
-    // Display boot script output
+    // Display boot script output with same formatting as regular REPL output
     result.outputs.forEach(output => {
-      term.writeln(output);
+      // Handle multiline output by splitting on newlines
+      const lines = String(output).split('\n');
+      lines.forEach((l, i) => {
+        if (i === lines.length - 1 && l === '') {
+          // Skip empty last line from split
+          return;
+        }
+        // Apply syntax highlighting to output
+        const highlighted = highlighter.highlightLine(l);
+        term.writeln(highlighted);
+      });
     });
     term.writeln(''); // Add blank line after boot output
   }
