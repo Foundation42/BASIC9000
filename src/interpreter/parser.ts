@@ -41,7 +41,9 @@ import type {
   TypeFieldNode,
   UnaryExpressionNode,
   WithStatementNode,
-  WithFieldNode
+  WithFieldNode,
+  SelectCaseStatementNode,
+  CaseClause
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -178,6 +180,11 @@ class Parser {
     if (this.matchKeyword('WITH')) {
       const keyword = this.previous();
       return this.parseWithStatement(keyword);
+    }
+
+    if (this.matchKeyword('SELECT')) {
+      const keyword = this.previous();
+      return this.parseSelectCaseStatement(keyword);
     }
 
     if (this.matchKeyword('SPAWN')) {
@@ -713,6 +720,89 @@ class Parser {
       object,
       body
     } satisfies WithStatementNode;
+  }
+
+  private parseSelectCaseStatement(keyword: Token): SelectCaseStatementNode {
+    // Parse SELECT CASE expression
+    this.consumeKeyword('CASE');
+    const expression = this.parseExpression();
+
+    // Skip newlines
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    const cases: CaseClause[] = [];
+    let elseCase: StatementNode[] | undefined;
+
+    // Parse CASE clauses until END SELECT
+    while (!this.isAtEnd()) {
+      if (this.isKeyword('END') && this.peekNextKeyword('SELECT')) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      if (this.matchKeyword('CASE')) {
+        // Check for CASE ELSE
+        if (this.matchKeyword('ELSE')) {
+          // Parse ELSE case body
+          elseCase = [];
+          while (!this.isAtEnd()) {
+            if (this.isKeyword('CASE') || (this.isKeyword('END') && this.peekNextKeyword('SELECT'))) {
+              break;
+            }
+            if (this.match(TokenType.Newline)) {
+              continue;
+            }
+            elseCase.push(this.parseStatement());
+          }
+        } else {
+          // Parse CASE values (comma-separated)
+          const values: ExpressionNode[] = [];
+          do {
+            values.push(this.parseExpression());
+          } while (this.match(TokenType.Comma));
+
+          // Skip newlines after CASE values
+          while (this.match(TokenType.Newline)) {
+            // consume
+          }
+
+          // Parse CASE body
+          const statements: StatementNode[] = [];
+          while (!this.isAtEnd()) {
+            if (this.isKeyword('CASE') || (this.isKeyword('END') && this.peekNextKeyword('SELECT'))) {
+              break;
+            }
+            if (this.match(TokenType.Newline)) {
+              continue;
+            }
+            statements.push(this.parseStatement());
+          }
+
+          cases.push({ values, statements });
+        }
+      }
+    }
+
+    // Consume END SELECT
+    if (!this.matchKeyword('END')) {
+      throw new ParseError('Expected END SELECT', this.peek());
+    }
+    if (!this.matchKeyword('SELECT')) {
+      throw new ParseError('Expected SELECT after END', this.peek());
+    }
+
+    return {
+      type: 'SelectCaseStatement',
+      token: keyword,
+      expression,
+      cases,
+      elseCase
+    } satisfies SelectCaseStatementNode;
   }
 
   private parseParameterList(): ParameterNode[] {

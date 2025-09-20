@@ -28,7 +28,8 @@ import type {
   TypeDeclarationNode,
   UnaryExpressionNode,
   WithStatementNode,
-  WithFieldNode
+  WithFieldNode,
+  SelectCaseStatementNode
 } from './ast.js';
 import {
   HostEnvironment,
@@ -352,6 +353,8 @@ class Evaluator {
         return this.executeExit(statement);
       case 'WithStatement':
         return this.executeWith(statement, position);
+      case 'SelectCaseStatement':
+        return this.executeSelectCase(statement, position);
       default: {
         const exhaustiveCheck: never = statement;
         throw exhaustiveCheck;
@@ -1054,6 +1057,73 @@ class Evaluator {
     }
 
     return undefined;
+  }
+
+  private async executeSelectCase(statement: SelectCaseStatementNode, position: StatementPosition): Promise<StatementSignal | undefined> {
+    // Evaluate the SELECT CASE expression once
+    const selectValue = await this.evaluateExpression(statement.expression);
+
+    // Check each CASE clause
+    for (const caseClause of statement.cases) {
+      // Check if any of the case values match
+      let matched = false;
+      for (const caseValue of caseClause.values) {
+        const value = await this.evaluateExpression(caseValue);
+        if (this.areValuesEqual(selectValue, value)) {
+          matched = true;
+          break;
+        }
+      }
+
+      if (matched) {
+        // Execute the statements for this case
+        for (const stmt of caseClause.statements) {
+          const signal = await this.executeStatement(stmt, position);
+          if (signal) {
+            return signal;
+          }
+        }
+        // Exit after first matching case
+        return undefined;
+      }
+    }
+
+    // If no case matched, execute CASE ELSE if present
+    if (statement.elseCase) {
+      for (const stmt of statement.elseCase) {
+        const signal = await this.executeStatement(stmt, position);
+        if (signal) {
+          return signal;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private areValuesEqual(a: RuntimeValue, b: RuntimeValue): boolean {
+    // Simple equality check for runtime values
+    if (a === b) return true;
+
+    // Handle null
+    if (a === null || b === null) return a === b;
+
+    // Handle records (reference equality)
+    if (isRecordValue(a) && isRecordValue(b)) {
+      return a === b; // Reference equality for records
+    }
+
+    // Handle arrays
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (!this.areValuesEqual(a[i], b[i])) return false;
+      }
+      return true;
+    }
+
+    // For primitives (numbers, strings, booleans)
+    return a === b;
   }
 
   private async executeReturn(statement: ReturnStatementNode): Promise<StatementSignal> {

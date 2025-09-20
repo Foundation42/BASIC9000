@@ -30,7 +30,8 @@ export type StatementNode =
   | FunctionStatementNode
   | SubStatementNode
   | ExitStatementNode
-  | WithStatementNode;
+  | WithStatementNode
+  | SelectCaseStatementNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -173,6 +174,18 @@ export interface WithStatementNode extends BaseStatementNode {
   readonly type: 'WithStatement';
   readonly object: ExpressionNode;
   readonly body: StatementNode[];
+}
+
+export interface SelectCaseStatementNode extends BaseStatementNode {
+  readonly type: 'SelectCaseStatement';
+  readonly expression: ExpressionNode;
+  readonly cases: CaseClause[];
+  readonly elseCase?: StatementNode[];
+}
+
+export interface CaseClause {
+  readonly values: ExpressionNode[];
+  readonly statements: StatementNode[];
 }
 
 export type ExpressionNode =
