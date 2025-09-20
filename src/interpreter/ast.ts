@@ -29,7 +29,8 @@ export type StatementNode =
   | ErrorStatementNode
   | FunctionStatementNode
   | SubStatementNode
-  | ExitStatementNode;
+  | ExitStatementNode
+  | WithStatementNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -49,14 +50,14 @@ export interface PrintArgument {
 
 export interface LetStatementNode extends BaseStatementNode {
   readonly type: 'LetStatement';
-  readonly target: IdentifierNode | MemberExpressionNode;
+  readonly target: IdentifierNode | MemberExpressionNode | WithFieldNode;
   readonly typeAnnotation?: TypeAnnotationNode;
   readonly value: ExpressionNode;
 }
 
 export interface AssignmentStatementNode extends BaseStatementNode {
   readonly type: 'AssignmentStatement';
-  readonly target: IdentifierNode | MemberExpressionNode;
+  readonly target: IdentifierNode | MemberExpressionNode | WithFieldNode;
   readonly value: ExpressionNode;
 }
 
@@ -168,6 +169,12 @@ export interface ExitStatementNode extends BaseStatementNode {
   readonly exitType: 'SUB' | 'FUNCTION';
 }
 
+export interface WithStatementNode extends BaseStatementNode {
+  readonly type: 'WithStatement';
+  readonly object: ExpressionNode;
+  readonly body: StatementNode[];
+}
+
 export type ExpressionNode =
   | NumberLiteralNode
   | StringLiteralNode
@@ -180,7 +187,8 @@ export type ExpressionNode =
   | BinaryExpressionNode
   | CallExpressionNode
   | MemberExpressionNode
-  | AwaitExpressionNode;
+  | AwaitExpressionNode
+  | WithFieldNode;
 
 export interface NumberLiteralNode {
   readonly type: 'NumberLiteral';
@@ -266,6 +274,12 @@ export interface AwaitExpressionNode {
   readonly type: 'AwaitExpression';
   readonly keyword: Token;
   readonly expression: ExpressionNode;
+}
+
+export interface WithFieldNode {
+  readonly type: 'WithField';
+  readonly field: IdentifierNode;
+  readonly token: Token;
 }
 
 export type AnyNode = ProgramNode | LineNode | StatementNode | ExpressionNode;

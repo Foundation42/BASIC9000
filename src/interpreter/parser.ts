@@ -39,7 +39,9 @@ import type {
   TypeAnnotationNode,
   TypeDeclarationNode,
   TypeFieldNode,
-  UnaryExpressionNode
+  UnaryExpressionNode,
+  WithStatementNode,
+  WithFieldNode
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -173,6 +175,11 @@ class Parser {
       return this.parseExitStatement(keyword);
     }
 
+    if (this.matchKeyword('WITH')) {
+      const keyword = this.previous();
+      return this.parseWithStatement(keyword);
+    }
+
     if (this.matchKeyword('SPAWN')) {
       const keyword = this.previous();
       return this.parseSpawnStatement(keyword);
@@ -198,8 +205,8 @@ class Parser {
       return this.parseErrorStatement(keyword);
     }
 
-    // Check for assignment (including member assignment like p.x = 5)
-    if (this.check(TokenType.Identifier)) {
+    // Check for assignment (including member assignment like p.x = 5 and WITH field .x = 5)
+    if (this.check(TokenType.Identifier) || this.check(TokenType.Dot)) {
       const savedPosition = this.current;
 
       // Try to parse as assignment target
@@ -438,7 +445,14 @@ class Parser {
     return statements;
   }
 
-  private parseAssignmentTarget(): IdentifierNode | MemberExpressionNode {
+  private parseAssignmentTarget(): IdentifierNode | MemberExpressionNode | WithFieldNode {
+    // Check for WITH field shorthand (.field)
+    if (this.check(TokenType.Dot)) {
+      const dotToken = this.advance();
+      const field = this.parseMemberProperty();
+      return { type: 'WithField', field, token: dotToken } satisfies WithFieldNode;
+    }
+
     const identifier = this.parseIdentifier();
     let target: IdentifierNode | MemberExpressionNode = identifier;
     while (this.match(TokenType.Dot)) {
@@ -662,6 +676,45 @@ class Parser {
     } satisfies ExitStatementNode;
   }
 
+  private parseWithStatement(keyword: Token): WithStatementNode {
+    // Parse the object expression
+    const object = this.parseExpression();
+
+    // Skip newlines
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    // Parse body until END WITH
+    const body: StatementNode[] = [];
+    while (!this.isAtEnd()) {
+      if (this.isKeyword('END') && this.peekNextKeyword('WITH')) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      body.push(this.parseStatement());
+    }
+
+    // Consume END WITH
+    if (!this.matchKeyword('END')) {
+      throw new ParseError('Expected END WITH', this.peek());
+    }
+    if (!this.matchKeyword('WITH')) {
+      throw new ParseError('Expected WITH after END', this.peek());
+    }
+
+    return {
+      type: 'WithStatement',
+      token: keyword,
+      object,
+      body
+    } satisfies WithStatementNode;
+  }
+
   private parseParameterList(): ParameterNode[] {
     const parameters: ParameterNode[] = [];
 
@@ -854,6 +907,13 @@ class Parser {
   }
 
   private parsePrimary(): ExpressionNode {
+    // Check for WITH field shorthand (.field)
+    if (this.check(TokenType.Dot)) {
+      const dotToken = this.advance();
+      const field = this.parseMemberProperty();
+      return { type: 'WithField', field, token: dotToken } satisfies WithFieldNode;
+    }
+
     if (this.matchKeyword('TRUE')) {
       const token = this.previous();
       return { type: 'BooleanLiteral', value: true, token } satisfies BooleanLiteralNode;
@@ -999,8 +1059,10 @@ class Parser {
     throw new ParseError('Expected identifier', this.peek());
   }
 
-  private getTargetToken(target: IdentifierNode | MemberExpressionNode): Token {
-    return target.type === 'Identifier' ? target.token : target.property.token;
+  private getTargetToken(target: IdentifierNode | MemberExpressionNode | WithFieldNode): Token {
+    if (target.type === 'Identifier') return target.token;
+    if (target.type === 'MemberExpression') return target.property.token;
+    return target.token; // WithField
   }
 
   private consumeNumberLiteral(): number {
@@ -1064,6 +1126,8 @@ class Parser {
       case 'NullLiteral':
         return expression.token;
       case 'RecordLiteral':
+        return expression.token;
+      case 'WithField':
         return expression.token;
       default: {
         const exhaustiveCheck: never = expression;

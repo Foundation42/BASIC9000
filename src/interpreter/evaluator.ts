@@ -26,7 +26,9 @@ import type {
   ErrorStatementNode,
   TypeAnnotationNode,
   TypeDeclarationNode,
-  UnaryExpressionNode
+  UnaryExpressionNode,
+  WithStatementNode,
+  WithFieldNode
 } from './ast.js';
 import {
   HostEnvironment,
@@ -243,6 +245,7 @@ class Evaluator {
   private readonly hostEnvironment: HostEnvironment;
   private stepCount = 0;
   public haltReason: 'END' | 'STOP' | undefined;
+  private readonly withStack: RuntimeValue[] = [];
 
   constructor(
     private readonly program: ProgramNode,
@@ -347,6 +350,8 @@ class Evaluator {
         return this.executeSub(statement);
       case 'ExitStatement':
         return this.executeExit(statement);
+      case 'WithStatement':
+        return this.executeWith(statement, position);
       default: {
         const exhaustiveCheck: never = statement;
         throw exhaustiveCheck;
@@ -364,9 +369,12 @@ class Evaluator {
       } else {
         this.context.setVariable(statement.target.name, value, statement.token);
       }
-    } else {
+    } else if (statement.target.type === 'MemberExpression') {
       // MemberExpression - for field assignment
       await this.assignToMember(statement.target, value);
+    } else if (statement.target.type === 'WithField') {
+      // WITH field assignment
+      await this.assignToWithField(statement.target, value);
     }
     return undefined;
   }
@@ -378,9 +386,12 @@ class Evaluator {
 
     if (statement.target.type === 'Identifier') {
       this.context.setVariable(statement.target.name, value, statement.token);
-    } else {
+    } else if (statement.target.type === 'MemberExpression') {
       // MemberExpression - for field assignment
       await this.assignToMember(statement.target, value);
+    } else if (statement.target.type === 'WithField') {
+      // WITH field assignment
+      await this.assignToWithField(statement.target, value);
     }
     return undefined;
   }
@@ -536,6 +547,29 @@ class Evaluator {
     return { type: 'jump', targetLineIndex: index, targetStatementIndex: 0 };
   }
 
+  private async assignToWithField(target: WithFieldNode, value: RuntimeValue): Promise<void> {
+    // Get the current WITH object from the stack
+    if (this.withStack.length === 0) {
+      throw new RuntimeError('WITH field assignment outside of WITH block', target.token);
+    }
+
+    const withObject = this.withStack[this.withStack.length - 1];
+    const fieldName = target.field.name;
+
+    if (isRecordValue(withObject)) {
+      if (!withObject.has(fieldName)) {
+        throw new RuntimeError(
+          `Type '${withObject.typeName}' has no field '${fieldName}'`,
+          target.field.token
+        );
+      }
+      withObject.set(fieldName, value);
+      return;
+    }
+
+    throw new RuntimeError('Cannot assign to property of non-record value', target.field.token);
+  }
+
   private async assignToMember(target: MemberExpressionNode, value: RuntimeValue): Promise<void> {
     // For member assignment like p.x = 5, we need to:
     // 1. If target.object is an Identifier, get the variable directly (not a copy)
@@ -602,6 +636,8 @@ class Evaluator {
         return this.evaluateMemberExpression(expression);
       case 'AwaitExpression':
         throw new RuntimeError('AWAIT is not supported in this context', expression.keyword);
+      case 'WithField':
+        return this.evaluateWithField(expression);
       default: {
         const exhaustiveCheck: never = expression;
         throw exhaustiveCheck;
@@ -646,6 +682,31 @@ class Evaluator {
     }
 
     return new RuntimeRecordValue(typeName, ordered);
+  }
+
+  private async evaluateWithField(expression: WithFieldNode): Promise<RuntimeValue> {
+    // Get the current WITH object from the stack
+    if (this.withStack.length === 0) {
+      throw new RuntimeError('WITH field access outside of WITH block', expression.token);
+    }
+
+    const withObject = this.withStack[this.withStack.length - 1];
+
+    // Access the field on the WITH object
+    const fieldName = expression.field.name;
+
+    if (isRecordValue(withObject)) {
+      const value = withObject.get(fieldName);
+      if (value === undefined) {
+        throw new RuntimeError(
+          `Type '${withObject.typeName}' has no field '${fieldName}'`,
+          expression.field.token
+        );
+      }
+      return value;
+    }
+
+    throw new RuntimeError('WITH field access on non-record value', expression.token);
   }
 
   private async evaluateMemberExpression(expression: MemberExpressionNode): Promise<RuntimeValue> {
@@ -970,6 +1031,29 @@ class Evaluator {
   private async executeExit(statement: ExitStatementNode): Promise<StatementSignal> {
     // EXIT SUB or EXIT FUNCTION acts like RETURN
     return { type: 'return', value: null };
+  }
+
+  private async executeWith(statement: WithStatementNode, position: StatementPosition): Promise<StatementSignal | undefined> {
+    // Evaluate the object to use with WITH
+    const object = await this.evaluateExpression(statement.object);
+
+    // Push onto WITH stack
+    this.withStack.push(object);
+
+    try {
+      // Execute body statements
+      for (const stmt of statement.body) {
+        const signal = await this.executeStatement(stmt, position);
+        if (signal) {
+          return signal;
+        }
+      }
+    } finally {
+      // Always pop from WITH stack
+      this.withStack.pop();
+    }
+
+    return undefined;
   }
 
   private async executeReturn(statement: ReturnStatementNode): Promise<StatementSignal> {
