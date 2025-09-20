@@ -17,8 +17,15 @@ describe('Objects.md Language Features', () => {
     const source = readFileSync(filePath, 'utf-8');
     const fileName = filePath.split('/').pop();
 
+    // Check if this test expects a RuntimeError
+    const expectsRuntimeError = source.includes('REM EXPECT: RuntimeError');
+
     try {
       const result = await run(source);
+
+      if (expectsRuntimeError) {
+        throw new Error(`Expected RuntimeError in ${fileName}, but test completed successfully`);
+      }
 
       // Check for PASS/FAIL in outputs
       const passes = result.outputs.filter(o => o.includes('PASS:')).length;
@@ -31,6 +38,10 @@ describe('Objects.md Language Features', () => {
       return { passes, fails, outputs: result.outputs };
     } catch (error) {
       if (error instanceof RuntimeError) {
+        if (expectsRuntimeError) {
+          // This is expected - return a successful result
+          return { passes: 1, fails: 0, outputs: [`Expected RuntimeError: ${error.message}`] };
+        }
         throw new Error(`Runtime error in ${fileName}: ${error.message}`);
       }
       throw error;
