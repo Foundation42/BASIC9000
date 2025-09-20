@@ -1,6 +1,40 @@
 REM ============================================
 REM BASIC9000 Retro Graphics Demo
+REM Now with TYPE definitions for retro UI elements
 REM ============================================
+
+' Define types for retro UI components
+TYPE Monitor
+  x AS NUMBER
+  y AS NUMBER
+  width AS NUMBER
+  height AS NUMBER
+  bezelColor AS STRING
+  screenColor AS STRING
+END TYPE
+
+TYPE StatusLight
+  x AS NUMBER
+  y AS NUMBER
+  radius AS NUMBER
+  color AS STRING
+  active AS BOOL
+END TYPE
+
+TYPE Button
+  x AS NUMBER
+  y AS NUMBER
+  radius AS NUMBER
+  label AS STRING
+  baseColor AS STRING
+  textColor AS STRING
+END TYPE
+
+TYPE RetroTheme
+  primaryColor AS STRING
+  secondaryColor AS STRING
+  backgroundColor AS STRING
+END TYPE
 
 PRINT "=== BASIC9000 Canvas Demo ==="
 PRINT "Creating retro graphics..."
@@ -11,77 +45,89 @@ LET canvas = CANVAS.CREATE(800, 600)
 CANVAS.POSITION(canvas, 50, 50)
 CANVAS.SHOW(canvas)
 
+REM Initialize theme
+LET theme = RetroTheme { primaryColor: "#00ff00", secondaryColor: "#00aa00", backgroundColor: "black" }
+
 REM Black background
-CANVAS.CLEAR(canvas, "black")
+CANVAS.CLEAR(canvas, theme.backgroundColor)
 
 REM Draw retro title
-CANVAS.COLOR(canvas, "#00ff00")
+CANVAS.COLOR(canvas, theme.primaryColor)
 CANVAS.FONT(canvas, "32px monospace")
 CANVAS.TEXTALIGN(canvas, "center")
 CANVAS.TEXT(canvas, "BASIC9000", 400, 50)
 
 REM Draw subtitle
 CANVAS.FONT(canvas, "16px monospace")
-CANVAS.COLOR(canvas, "#00aa00")
+CANVAS.COLOR(canvas, theme.secondaryColor)
 CANVAS.TEXT(canvas, "Retro Computing with Modern Power", 400, 80)
 
 REM Draw a retro computer monitor frame
-CANVAS.COLOR(canvas, "#333333")
-CANVAS.FILLRECT(canvas, 150, 120, 500, 350)
-CANVAS.COLOR(canvas, "#000000")
-CANVAS.FILLRECT(canvas, 170, 140, 460, 310)
+LET monitor = Monitor { x: 150, y: 120, width: 500, height: 350, bezelColor: "#333333", screenColor: "#000000" }
+CANVAS.COLOR(canvas, monitor.bezelColor)
+CANVAS.FILLRECT(canvas, monitor.x, monitor.y, monitor.width, monitor.height)
+CANVAS.COLOR(canvas, monitor.screenColor)
+CANVAS.FILLRECT(canvas, monitor.x + 20, monitor.y + 20, monitor.width - 40, monitor.height - 40)
 
 REM Draw scan lines effect
 CANVAS.COLOR(canvas, "rgba(0, 255, 0, 0.1)")
-FOR y = 140 TO 450 STEP 3
-  CANVAS.LINE(canvas, 170, y, 630, y)
+FOR y AS NUMBER = monitor.y + 20 TO monitor.y + monitor.height - 20 STEP 3
+  CANVAS.LINE(canvas, monitor.x + 20, y, monitor.x + monitor.width - 20, y)
 NEXT y
 
 REM Draw some "code" on the screen
-CANVAS.COLOR(canvas, "#00ff00")
+LET codeX AS NUMBER = monitor.x + 30
+LET codeY AS NUMBER = monitor.y + 40
+CANVAS.COLOR(canvas, theme.primaryColor)
 CANVAS.FONT(canvas, "14px monospace")
 CANVAS.TEXTALIGN(canvas, "left")
-CANVAS.TEXT(canvas, "10 PRINT " + CHR$(34) + "HELLO WORLD" + CHR$(34), 180, 160)
-CANVAS.TEXT(canvas, "20 FOR I = 1 TO 10", 180, 180)
-CANVAS.TEXT(canvas, "30   PRINT I * I", 180, 200)
-CANVAS.TEXT(canvas, "40 NEXT I", 180, 220)
-CANVAS.TEXT(canvas, "50 END", 180, 240)
-CANVAS.TEXT(canvas, "RUN", 180, 260)
-CANVAS.TEXT(canvas, "_", 210, 260)
+CANVAS.TEXT(canvas, "10 PRINT " + CHR$(34) + "HELLO WORLD" + CHR$(34), codeX, codeY)
+CANVAS.TEXT(canvas, "20 FOR I = 1 TO 10", codeX, codeY + 20)
+CANVAS.TEXT(canvas, "30   PRINT I * I", codeX, codeY + 40)
+CANVAS.TEXT(canvas, "40 NEXT I", codeX, codeY + 60)
+CANVAS.TEXT(canvas, "50 END", codeX, codeY + 80)
+CANVAS.TEXT(canvas, "RUN", codeX, codeY + 100)
+CANVAS.TEXT(canvas, "_", codeX + 30, codeY + 100)
 
 REM Draw a blinking cursor effect
-CANVAS.COLOR(canvas, "#00ff00")
-CANVAS.FILLRECT(canvas, 210, 260, 10, 2)
+CANVAS.COLOR(canvas, theme.primaryColor)
+CANVAS.FILLRECT(canvas, codeX + 30, codeY + 100, 10, 2)
 
 REM Draw some retro UI elements
 CANVAS.COLOR(canvas, "#00ff00")
 CANVAS.LINEWIDTH(canvas, 2)
 
 REM Draw power button
-CANVAS.CIRCLE(canvas, 400, 500, 20)
-CANVAS.COLOR(canvas, "#00aa00")
-CANVAS.FILLCIRCLE(canvas, 400, 500, 15)
-CANVAS.COLOR(canvas, "#00ff00")
+LET powerBtn = Button { x: 400, y: 500, radius: 20, label: "PWR", baseColor: theme.secondaryColor, textColor: theme.primaryColor }
+CANVAS.COLOR(canvas, theme.primaryColor)
+CANVAS.CIRCLE(canvas, powerBtn.x, powerBtn.y, powerBtn.radius)
+CANVAS.COLOR(canvas, powerBtn.baseColor)
+CANVAS.FILLCIRCLE(canvas, powerBtn.x, powerBtn.y, powerBtn.radius - 5)
+CANVAS.COLOR(canvas, powerBtn.textColor)
 CANVAS.FONT(canvas, "12px monospace")
 CANVAS.TEXTALIGN(canvas, "center")
-CANVAS.TEXT(canvas, "PWR", 400, 505)
+CANVAS.TEXT(canvas, powerBtn.label, powerBtn.x, powerBtn.y + 5)
 
 REM Draw some status lights
-CANVAS.COLOR(canvas, "red")
-CANVAS.FILLCIRCLE(canvas, 300, 500, 8)
-CANVAS.COLOR(canvas, "yellow")
-CANVAS.FILLCIRCLE(canvas, 330, 500, 8)
-CANVAS.COLOR(canvas, "#00ff00")
-CANVAS.FILLCIRCLE(canvas, 360, 500, 8)
+LET redLight = StatusLight { x: 300, y: 500, radius: 8, color: "red", active: TRUE }
+LET yellowLight = StatusLight { x: 330, y: 500, radius: 8, color: "yellow", active: TRUE }
+LET greenLight = StatusLight { x: 360, y: 500, radius: 8, color: theme.primaryColor, active: TRUE }
+
+CANVAS.COLOR(canvas, redLight.color)
+CANVAS.FILLCIRCLE(canvas, redLight.x, redLight.y, redLight.radius)
+CANVAS.COLOR(canvas, yellowLight.color)
+CANVAS.FILLCIRCLE(canvas, yellowLight.x, yellowLight.y, yellowLight.radius)
+CANVAS.COLOR(canvas, greenLight.color)
+CANVAS.FILLCIRCLE(canvas, greenLight.x, greenLight.y, greenLight.radius)
 
 REM Draw decorative frame
-CANVAS.COLOR(canvas, "#00ff00")
+CANVAS.COLOR(canvas, theme.primaryColor)
 CANVAS.LINEWIDTH(canvas, 3)
 CANVAS.RECT(canvas, 10, 10, 780, 580)
 
 REM Corner decorations
 CANVAS.LINEWIDTH(canvas, 2)
-FOR i = 0 TO 20 STEP 5
+FOR i AS NUMBER = 0 TO 20 STEP 5
   CANVAS.LINE(canvas, 10 + i, 10, 10, 10 + i)
   CANVAS.LINE(canvas, 790 - i, 10, 790, 10 + i)
   CANVAS.LINE(canvas, 10 + i, 590, 10, 590 - i)
@@ -89,10 +135,11 @@ FOR i = 0 TO 20 STEP 5
 NEXT i
 
 REM Add timestamp
-CANVAS.COLOR(canvas, "#00aa00")
+CANVAS.COLOR(canvas, theme.secondaryColor)
 CANVAS.FONT(canvas, "12px monospace")
 CANVAS.TEXTALIGN(canvas, "right")
-CANVAS.TEXT(canvas, TIME.NOW(), 780, 580)
+LET timestamp$ AS STRING = TIME.NOW()
+CANVAS.TEXT(canvas, timestamp$, 780, 580)
 
 PRINT "Demo complete!"
 PRINT "Canvas ID: " + STR$(canvas)

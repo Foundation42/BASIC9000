@@ -31,7 +31,7 @@ describe('evaluator', () => {
   it('supports implicit assignment and expression statements', async () => {
     const result = await run('value = 5 * 3\nPRINT value + 2');
     expect(result.outputs).toEqual(['17']);
-    expect(result.variables).toMatchObject({ VALUE: 15 });
+    expect(result.variables).toMatchObject({ value: 15 });
   });
 
   it('defaults string variables to empty and numeric to zero', async () => {
@@ -62,6 +62,31 @@ describe('evaluator', () => {
   it('performs numeric comparisons and boolean math', async () => {
     const result = await run('IF 5 > 3 THEN PRINT 1 ELSE PRINT 0');
     expect(result.outputs).toEqual(['1']);
+  });
+
+  it('creates record values from TYPE declarations', async () => {
+    const program = `
+TYPE Vector
+  x AS NUMBER
+  y AS NUMBER
+END TYPE
+LET v = Vector { x: 3, y: 4 }
+PRINT v.x
+PRINT v.y
+`;
+    const result = await run(program.trim());
+    expect(result.outputs).toEqual(['3', '4']);
+  });
+
+  it('raises when record literal omits required fields', async () => {
+    const program = `
+TYPE Vector
+  x AS NUMBER
+  y AS NUMBER
+END TYPE
+LET v = Vector { x: 1 }
+`;
+    await expect(run(program.trim())).rejects.toThrow(RuntimeError);
   });
 
   it('raises runtime error for unsupported constructs', async () => {

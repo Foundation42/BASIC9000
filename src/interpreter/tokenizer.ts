@@ -13,11 +13,13 @@ export enum TokenType {
   RightParen = 'RIGHT_PAREN',
   LeftBracket = 'LEFT_BRACKET',
   RightBracket = 'RIGHT_BRACKET',
+  LeftBrace = 'LEFT_BRACE',
+  RightBrace = 'RIGHT_BRACE',
   Comment = 'COMMENT',
   EOF = 'EOF'
 }
 
-export type TokenLiteral = string | number | undefined;
+export type TokenLiteral = string | number | boolean | null | undefined;
 
 export interface Token {
   type: TokenType;
@@ -96,7 +98,11 @@ const KEYWORDS = new Set<string>([
   'RECEIVE',
   'BROADCAST',
   'SLEEP',
-  'YIELD'
+  'YIELD',
+  'TRUE',
+  'FALSE',
+  'NULL',
+  'PUBLIC'
 ]);
 
 const SINGLE_CHAR_OPERATORS = new Map<string, TokenType>([
@@ -112,6 +118,8 @@ const SINGLE_CHAR_OPERATORS = new Map<string, TokenType>([
   [')', TokenType.RightParen],
   ['[', TokenType.LeftBracket],
   [']', TokenType.RightBracket],
+  ['{', TokenType.LeftBrace],
+  ['}', TokenType.RightBrace],
   [',', TokenType.Comma],
   [':', TokenType.Colon],
   [';', TokenType.Semicolon],
@@ -351,6 +359,15 @@ function scanIdentifierOrKeyword(cursor: Cursor, includeComments: boolean): Toke
   }
 
   if (KEYWORDS.has(upper)) {
+    if (upper === 'TRUE') {
+      return createToken(TokenType.Keyword, upper, true, startLine, startColumn);
+    }
+    if (upper === 'FALSE') {
+      return createToken(TokenType.Keyword, upper, false, startLine, startColumn);
+    }
+    if (upper === 'NULL') {
+      return createToken(TokenType.Keyword, upper, null, startLine, startColumn);
+    }
     return createToken(TokenType.Keyword, upper, undefined, startLine, startColumn);
   }
 

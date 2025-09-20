@@ -4,8 +4,11 @@ import type {
   AssignmentStatementNode,
   ForStatementNode,
   IfStatementNode,
+  LetStatementNode,
   LineNode,
-  PrintStatementNode
+  PrintStatementNode,
+  RecordLiteralNode,
+  TypeDeclarationNode
 } from '../../src/interpreter/ast.js';
 
 describe('parser', () => {
@@ -91,6 +94,27 @@ describe('parser', () => {
     expect(firstPrint.trailing).toBe('none');
     const secondPrint = second!.statements[0] as PrintStatementNode;
     expect(secondPrint.trailing).toBe('newline');
+  });
+
+  it('parses TYPE declarations with field annotations', () => {
+    const program = parseSource('TYPE Vector\n  x AS NUMBER\n  y AS NUMBER\nEND TYPE');
+    const declaration = firstLine(program).statements[0] as TypeDeclarationNode;
+    expect(declaration.type).toBe('TypeDeclaration');
+    expect(declaration.name.name).toBe('Vector');
+    expect(declaration.fields).toHaveLength(2);
+    expect(declaration.fields[0]?.annotation.name).toBe('NUMBER');
+    expect(declaration.fields[1]?.name.name).toBe('y');
+  });
+
+  it('parses record literals and optional type annotations in LET', () => {
+    const program = parseSource('LET point AS Vector = Vector { x: 0, y: 1 }');
+    const statement = firstLine(program).statements[0] as LetStatementNode;
+    expect(statement.typeAnnotation?.name).toBe('Vector');
+    expect(statement.value.type).toBe('RecordLiteral');
+    const record = statement.value as RecordLiteralNode;
+    expect(record.typeName.name).toBe('Vector');
+    expect(record.fields).toHaveLength(2);
+    expect(record.fields[0]?.name.name).toBe('x');
   });
 
   it('raises on invalid assignments', () => {

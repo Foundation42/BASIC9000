@@ -15,9 +15,12 @@ import type {
   NextStatementNode,
   PrintStatementNode,
   ProgramNode,
+  RecordLiteralNode,
   ReturnStatementNode,
   SpawnStatementNode,
   StatementNode,
+  TypeAnnotationNode,
+  TypeDeclarationNode,
   UnaryExpressionNode
 } from './ast.js';
 import {
@@ -27,7 +30,7 @@ import {
   isHostNamespace
 } from './host.js';
 import { createDefaultHostEnvironment } from './host-defaults.js';
-import type { RuntimeValue } from './runtime-values.js';
+import { RuntimeRecordValue, isRecordValue, type RuntimeValue } from './runtime-values.js';
 import { parseSource, type ParserOptions } from './parser.js';
 import type { Token } from './tokenizer.js';
 
@@ -95,6 +98,7 @@ class ExecutionContext {
   private currentPrintBuffer = '';
   private hasPendingBuffer = false;
   private readonly routines = new Set<string>();
+  private readonly types = new Map<string, RuntimeTypeDefinition>();
 
   public getVariable(name: string): RuntimeValue {
     const key = normalizeIdentifier(name);
@@ -164,6 +168,7 @@ class ExecutionContext {
     this.currentPrintBuffer = '';
     this.hasPendingBuffer = false;
     this.routines.clear();
+    this.types.clear();
   }
 
   public spawnRoutine(name: string): boolean {
@@ -173,6 +178,37 @@ class ExecutionContext {
     }
     this.routines.add(key);
     return true;
+  }
+
+  public defineType(declaration: TypeDeclarationNode): void {
+    const typeName = declaration.name.name;
+    if (this.types.has(typeName)) {
+      throw new RuntimeError(`Type '${typeName}' is already defined`, declaration.name.token);
+    }
+
+    const fieldOrder: string[] = [];
+    const fieldMap = new Map<string, RuntimeTypeField>();
+
+    for (const field of declaration.fields) {
+      const fieldName = field.name.name;
+      if (fieldMap.has(fieldName)) {
+        throw new RuntimeError(
+          `Duplicate field '${fieldName}' in TYPE ${typeName}`,
+          field.name.token
+        );
+      }
+      fieldOrder.push(fieldName);
+      fieldMap.set(fieldName, {
+        name: fieldName,
+        annotation: field.annotation
+      });
+    }
+
+    this.types.set(typeName, { name: typeName, fieldOrder, fields: fieldMap });
+  }
+
+  public getTypeDefinition(name: string): RuntimeTypeDefinition | undefined {
+    return this.types.get(name);
   }
 }
 
@@ -275,6 +311,9 @@ class Evaluator {
       case 'ExpressionStatement':
         await this.evaluateExpression(statement.expression);
         return undefined;
+      case 'TypeDeclaration':
+        this.context.defineType(statement);
+        return undefined;
       default: {
         const exhaustiveCheck: never = statement;
         throw exhaustiveCheck;
@@ -371,10 +410,16 @@ class Evaluator {
         return expression.value;
       case 'StringLiteral':
         return expression.value;
+      case 'BooleanLiteral':
+        return booleanToRuntime(expression.value);
+      case 'NullLiteral':
+        return null;
       case 'Identifier':
         return this.resolveIdentifier(expression);
       case 'ArrayLiteral':
         return this.evaluateArrayLiteral(expression);
+      case 'RecordLiteral':
+        return this.evaluateRecordLiteral(expression);
       case 'UnaryExpression':
         return this.evaluateUnary(expression);
       case 'BinaryExpression':
@@ -392,6 +437,45 @@ class Evaluator {
     }
   }
 
+  private async evaluateRecordLiteral(expression: RecordLiteralNode): Promise<RuntimeValue> {
+    const typeName = expression.typeName.name;
+    const typeDefinition = this.context.getTypeDefinition(typeName);
+
+    if (!typeDefinition) {
+      throw new RuntimeError(`Unknown type '${typeName}'`, expression.typeName.token);
+    }
+
+    const providedValues = new Map<string, RuntimeValue>();
+
+    for (const field of expression.fields) {
+      const fieldName = field.name.name;
+      if (!typeDefinition.fields.has(fieldName)) {
+        throw new RuntimeError(
+          `Type '${typeName}' has no field '${fieldName}'`,
+          field.name.token
+        );
+      }
+      if (providedValues.has(fieldName)) {
+        throw new RuntimeError(`Field '${fieldName}' provided more than once`, field.name.token);
+      }
+      const value = await this.evaluateExpression(field.value);
+      providedValues.set(fieldName, value);
+    }
+
+    const ordered: [string, RuntimeValue][] = [];
+    for (const fieldName of typeDefinition.fieldOrder) {
+      if (!providedValues.has(fieldName)) {
+        throw new RuntimeError(
+          `Missing value for field '${fieldName}' in type '${typeName}'`,
+          expression.token
+        );
+      }
+      ordered.push([fieldName, providedValues.get(fieldName)!]);
+    }
+
+    return new RuntimeRecordValue(typeName, ordered);
+  }
+
   private async evaluateMemberExpression(expression: MemberExpressionNode): Promise<RuntimeValue> {
     const objectValue = await this.evaluateExpression(expression.object);
 
@@ -404,6 +488,17 @@ class Evaluator {
         );
       }
       return member as RuntimeValue;
+    }
+
+    if (isRecordValue(objectValue)) {
+      const fieldName = expression.property.name;
+      if (!objectValue.has(fieldName)) {
+        throw new RuntimeError(
+          `Type '${objectValue.typeName}' has no field '${fieldName}'`,
+          expression.property.token
+        );
+      }
+      return objectValue.get(fieldName)!;
     }
 
     throw new RuntimeError('Property access is not supported for this value', expression.property.token);
@@ -772,6 +867,17 @@ interface ForFrame {
   readonly token: Token;
 }
 
+interface RuntimeTypeField {
+  readonly name: string;
+  readonly annotation: TypeAnnotationNode;
+}
+
+interface RuntimeTypeDefinition {
+  readonly name: string;
+  readonly fieldOrder: readonly string[];
+  readonly fields: Map<string, RuntimeTypeField>;
+}
+
 function normalizeIdentifier(name: string): string {
   // Keep case sensitivity for modern BASIC
   return name;
@@ -791,10 +897,16 @@ function coerceValueForIdentifier(name: string, value: RuntimeValue, token: Toke
   if (typeof value === 'number') {
     return value;
   }
+  if (typeof value === 'boolean') {
+    return booleanToRuntime(value);
+  }
   if (typeof value === 'string') {
     return toNumber(value, token);
   }
   if (Array.isArray(value)) {
+    return value;
+  }
+  if (isRecordValue(value)) {
     return value;
   }
   return value;
@@ -807,8 +919,21 @@ function runtimeValueToString(value: RuntimeValue): string {
   if (typeof value === 'string') {
     return value;
   }
+  if (typeof value === 'boolean') {
+    return value ? 'TRUE' : 'FALSE';
+  }
+  if (value === null) {
+    return 'NULL';
+  }
   if (Array.isArray(value)) {
     return `[${value.map((item) => runtimeValueToString(item)).join(',')}]`;
+  }
+  if (isRecordValue(value)) {
+    const inner = value
+      .entries()
+      .map(([fieldName, fieldValue]) => `${fieldName}: ${runtimeValueToString(fieldValue)}`)
+      .join(', ');
+    return `${value.typeName} { ${inner} }`;
   }
   return hostValueToString(value);
 }
@@ -820,8 +945,17 @@ function truthy(value: RuntimeValue): boolean {
   if (typeof value === 'string') {
     return value.length > 0;
   }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value === null) {
+    return false;
+  }
   if (Array.isArray(value)) {
     return value.length > 0;
+  }
+  if (isRecordValue(value)) {
+    return true;
   }
   return true;
 }
@@ -837,8 +971,17 @@ function toStringValue(value: RuntimeValue): string {
   if (typeof value === 'number') {
     return value.toString();
   }
+  if (typeof value === 'boolean') {
+    return value ? 'TRUE' : 'FALSE';
+  }
+  if (value === null) {
+    return 'NULL';
+  }
   if (Array.isArray(value)) {
     return `[${value.map((item) => toStringValue(item)).join(',')}]`;
+  }
+  if (isRecordValue(value)) {
+    return runtimeValueToString(value);
   }
   return hostValueToString(value);
 }
@@ -846,6 +989,9 @@ function toStringValue(value: RuntimeValue): string {
 function toNumber(value: RuntimeValue, token: Token): number {
   if (typeof value === 'number') {
     return value;
+  }
+  if (typeof value === 'boolean') {
+    return booleanToRuntime(value);
   }
   if (typeof value === 'string') {
     const parsed = Number(value);
@@ -857,12 +1003,27 @@ function toNumber(value: RuntimeValue, token: Token): number {
   if (Array.isArray(value)) {
     throw new RuntimeError('Cannot convert array to number', token);
   }
+  if (value === null) {
+    throw new RuntimeError('Cannot convert NULL to number', token);
+  }
+  if (isRecordValue(value)) {
+    throw new RuntimeError('Cannot convert record to number', token);
+  }
   throw new RuntimeError('Cannot convert host value to number', token);
 }
 
 function equals(left: RuntimeValue, right: RuntimeValue): boolean {
   if (typeof left === 'number' && typeof right === 'number') {
     return left === right;
+  }
+  if (typeof left === 'boolean' && typeof right === 'boolean') {
+    return left === right;
+  }
+  if (left === null || right === null) {
+    return left === right;
+  }
+  if (isRecordValue(left) && isRecordValue(right)) {
+    return recordEquals(left, right);
   }
   return toStringValue(left).toUpperCase() === toStringValue(right).toUpperCase();
 }
@@ -871,12 +1032,77 @@ function compare(left: RuntimeValue, right: RuntimeValue): number {
   if (typeof left === 'number' && typeof right === 'number') {
     return left - right;
   }
+  if (typeof left === 'boolean' && typeof right === 'boolean') {
+    return Number(left) - Number(right);
+  }
+  if (left === null || right === null) {
+    if (left === right) {
+      return 0;
+    }
+    return left === null ? -1 : 1;
+  }
+  if (isRecordValue(left) && isRecordValue(right)) {
+    if (left === right) {
+      return 0;
+    }
+    const typeOrder = left.typeName.localeCompare(right.typeName, undefined, {
+      sensitivity: 'base'
+    });
+    if (typeOrder !== 0) {
+      return typeOrder;
+    }
+    const entriesLeft = left.entries();
+    const entriesRight = right.entries();
+    const lengthOrder = entriesLeft.length - entriesRight.length;
+    if (lengthOrder !== 0) {
+      return lengthOrder;
+    }
+    for (let i = 0; i < entriesLeft.length; i += 1) {
+      const [fieldLeft, valueLeft] = entriesLeft[i]!;
+      const [fieldRight, valueRight] = entriesRight[i]!;
+      const nameOrder = fieldLeft.localeCompare(fieldRight, undefined, { sensitivity: 'base' });
+      if (nameOrder !== 0) {
+        return nameOrder;
+      }
+      const valueOrder = compare(valueLeft, valueRight);
+      if (valueOrder !== 0) {
+        return valueOrder;
+      }
+    }
+    return 0;
+  }
   const leftStr = toStringValue(left).toUpperCase();
   const rightStr = toStringValue(right).toUpperCase();
   if (leftStr === rightStr) {
     return 0;
   }
   return leftStr < rightStr ? -1 : 1;
+}
+
+function recordEquals(left: RuntimeRecordValue, right: RuntimeRecordValue): boolean {
+  if (left.typeName !== right.typeName) {
+    return false;
+  }
+
+  const leftEntries = left.entries();
+  const rightEntries = right.entries();
+
+  if (leftEntries.length !== rightEntries.length) {
+    return false;
+  }
+
+  for (let i = 0; i < leftEntries.length; i += 1) {
+    const [leftName, leftValue] = leftEntries[i]!;
+    const [rightName, rightValue] = rightEntries[i]!;
+    if (leftName !== rightName) {
+      return false;
+    }
+    if (!equals(leftValue, rightValue)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function modulo(a: number, b: number): number {

@@ -2,6 +2,8 @@ import { tokenize, Token, TokenType, type TokenizerOptions } from './tokenizer.j
 import type {
   AssignmentStatementNode,
   AwaitExpressionNode,
+  ArrayLiteralNode,
+  BooleanLiteralNode,
   BinaryExpressionNode,
   CallExpressionNode,
   EndStatementNode,
@@ -16,15 +18,21 @@ import type {
   LineNode,
   MemberExpressionNode,
   NextStatementNode,
+  NullLiteralNode,
   NumberLiteralNode,
   SpawnStatementNode,
   PrintArgument,
   PrintStatementNode,
   ProgramNode,
+  RecordLiteralField,
+  RecordLiteralNode,
   ReturnStatementNode,
   StopStatementNode,
   StatementNode,
   StringLiteralNode,
+  TypeAnnotationNode,
+  TypeDeclarationNode,
+  TypeFieldNode,
   UnaryExpressionNode
 } from './ast.js';
 
@@ -46,6 +54,8 @@ export function parseTokens(tokens: Token[]): ProgramNode {
   const parser = new Parser(tokens);
   return parser.parseProgram();
 }
+
+const TYPE_KEYWORDS = new Set(['NUMBER', 'STRING', 'BOOL', 'BOOLEAN', 'ANY', 'ARRAY', 'RECORD', 'BYTES']);
 
 class Parser {
   private current = 0;
@@ -95,6 +105,11 @@ class Parser {
     if (this.matchKeyword('LET')) {
       const keyword = this.previous();
       return this.parseLetStatement(keyword);
+    }
+
+    if (this.matchKeyword('TYPE')) {
+      const keyword = this.previous();
+      return this.parseTypeDeclaration(keyword);
     }
 
     if (this.matchKeyword('PRINT') || this.matchKeyword('?')) {
@@ -158,9 +173,19 @@ class Parser {
 
   private parseLetStatement(keyword: Token): LetStatementNode {
     const target = this.parseAssignmentTarget();
+    let typeAnnotation: TypeAnnotationNode | undefined;
+
+    if (this.isKeyword('AS')) {
+      if (target.type !== 'Identifier') {
+        throw new ParseError('Type annotations require a simple identifier', this.peek());
+      }
+      this.consumeKeyword('AS');
+      typeAnnotation = this.parseTypeAnnotation();
+    }
+
     this.consumeOperator('=');
     const value = this.parseExpression();
-    return { type: 'LetStatement', token: keyword, target, value } satisfies LetStatementNode;
+    return { type: 'LetStatement', token: keyword, target, typeAnnotation, value } satisfies LetStatementNode;
   }
 
   private parseAssignmentStatement(): AssignmentStatementNode {
@@ -169,6 +194,48 @@ class Parser {
     this.consumeOperator('=');
     const value = this.parseExpression();
     return { type: 'AssignmentStatement', token, target, value } satisfies AssignmentStatementNode;
+  }
+
+  private parseTypeDeclaration(keyword: Token): TypeDeclarationNode {
+    const name = this.parseIdentifier();
+    const fields: TypeFieldNode[] = [];
+    let closed = false;
+
+    while (!this.isAtEnd()) {
+      if (this.matchKeyword('ENDTYPE')) {
+        closed = true;
+        break;
+      }
+
+      if (this.matchKeyword('END')) {
+        this.consumeKeyword('TYPE');
+        closed = true;
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      const fieldName = this.parseIdentifier();
+      this.consumeKeyword('AS');
+      const annotation = this.parseTypeAnnotation();
+      fields.push({ name: fieldName, annotation } satisfies TypeFieldNode);
+
+      if (this.match(TokenType.Comma)) {
+        continue;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+    }
+
+    if (!closed) {
+      throw new ParseError('Unterminated TYPE declaration', keyword);
+    }
+
+    return { type: 'TypeDeclaration', token: keyword, name, fields } satisfies TypeDeclarationNode;
   }
 
   private parsePrintStatement(keyword: Token): PrintStatementNode {
@@ -466,6 +533,21 @@ class Parser {
   }
 
   private parsePrimary(): ExpressionNode {
+    if (this.matchKeyword('TRUE')) {
+      const token = this.previous();
+      return { type: 'BooleanLiteral', value: true, token } satisfies BooleanLiteralNode;
+    }
+
+    if (this.matchKeyword('FALSE')) {
+      const token = this.previous();
+      return { type: 'BooleanLiteral', value: false, token } satisfies BooleanLiteralNode;
+    }
+
+    if (this.matchKeyword('NULL')) {
+      const token = this.previous();
+      return { type: 'NullLiteral', token } satisfies NullLiteralNode;
+    }
+
     if (this.match(TokenType.Number)) {
       const token = this.previous();
       const value = typeof token.literal === 'number' ? token.literal : Number(token.lexeme);
@@ -480,7 +562,18 @@ class Parser {
 
     if (this.match(TokenType.Identifier)) {
       const token = this.previous();
-      return { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
+      const identifier = { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
+      if (this.match(TokenType.LeftBrace)) {
+        const fields = this.parseRecordLiteralFields();
+        this.consume(TokenType.RightBrace, 'Expected closing brace in record literal');
+        return {
+          type: 'RecordLiteral',
+          typeName: identifier,
+          fields,
+          token
+        } satisfies RecordLiteralNode;
+      }
+      return identifier;
     }
 
     if (this.match(TokenType.LeftParen)) {
@@ -498,7 +591,7 @@ class Parser {
         } while (this.match(TokenType.Comma));
       }
       this.consume(TokenType.RightBracket, 'Expected closing bracket');
-      return { type: 'ArrayLiteral', elements, token } as unknown as ExpressionNode;
+      return { type: 'ArrayLiteral', elements, token } satisfies ArrayLiteralNode;
     }
 
     throw new ParseError('Expected expression', this.peek());
@@ -510,6 +603,62 @@ class Parser {
     }
     const token = this.previous();
     return { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
+  }
+
+  private parseTypeAnnotation(): TypeAnnotationNode {
+    const token = this.consumeTypeNameToken('Expected type name');
+    let typeArguments: TypeAnnotationNode[] | undefined;
+
+    if (this.matchOperator('<')) {
+      const args: TypeAnnotationNode[] = [];
+      do {
+        args.push(this.parseTypeAnnotation());
+      } while (this.match(TokenType.Comma));
+      this.consumeOperator('>');
+      typeArguments = args;
+    }
+
+    return {
+      type: 'TypeAnnotation',
+      name: token.lexeme,
+      token,
+      typeArguments
+    } satisfies TypeAnnotationNode;
+  }
+
+  private parseRecordLiteralFields(): RecordLiteralField[] {
+    const fields: RecordLiteralField[] = [];
+    this.skipNewlines();
+
+    if (this.check(TokenType.RightBrace)) {
+      return fields;
+    }
+
+    while (true) {
+      this.skipNewlines();
+      const name = this.parseIdentifier();
+      this.consume(TokenType.Colon, 'Expected colon after field name');
+      const value = this.parseExpression();
+      fields.push({ name, value } satisfies RecordLiteralField);
+
+      this.skipNewlines();
+
+      if (this.match(TokenType.Comma)) {
+        continue;
+      }
+
+      this.skipNewlines();
+
+      if (this.check(TokenType.RightBrace)) {
+        break;
+      }
+
+      if (this.check(TokenType.EOF)) {
+        throw new ParseError('Unterminated record literal', this.peek());
+      }
+    }
+
+    return fields;
   }
 
   private parseMemberProperty(): IdentifierNode {
@@ -587,11 +736,50 @@ class Parser {
         return expression.keyword;
       case 'ArrayLiteral':
         return expression.token;
+      case 'BooleanLiteral':
+        return expression.token;
+      case 'NullLiteral':
+        return expression.token;
+      case 'RecordLiteral':
+        return expression.token;
       default: {
         const exhaustiveCheck: never = expression;
         throw exhaustiveCheck;
       }
     }
+  }
+
+  private consumeTypeNameToken(message: string): Token {
+    if (this.match(TokenType.Identifier)) {
+      return this.previous();
+    }
+
+    if (this.match(TokenType.Keyword)) {
+      const token = this.previous();
+      if (!TYPE_KEYWORDS.has(token.lexeme.toUpperCase())) {
+        throw new ParseError(message, token);
+      }
+      return token;
+    }
+
+    throw new ParseError(message, this.peek());
+  }
+
+  private skipNewlines(): void {
+    let consumed = false;
+    while (this.match(TokenType.Newline)) {
+      consumed = true;
+    }
+    if (consumed) {
+      this.atLineStart = true;
+    }
+  }
+
+  private isKeyword(keyword: string): boolean {
+    if (!this.check(TokenType.Keyword)) {
+      return false;
+    }
+    return this.peek().lexeme.toUpperCase() === keyword.toUpperCase();
   }
 
   private previous(): Token {

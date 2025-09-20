@@ -14,6 +14,7 @@ export type StatementNode =
   | PrintStatementNode
   | LetStatementNode
   | AssignmentStatementNode
+  | TypeDeclarationNode
   | IfStatementNode
   | ForStatementNode
   | NextStatementNode
@@ -44,6 +45,7 @@ export interface PrintArgument {
 export interface LetStatementNode extends BaseStatementNode {
   readonly type: 'LetStatement';
   readonly target: IdentifierNode | MemberExpressionNode;
+  readonly typeAnnotation?: TypeAnnotationNode;
   readonly value: ExpressionNode;
 }
 
@@ -51,6 +53,17 @@ export interface AssignmentStatementNode extends BaseStatementNode {
   readonly type: 'AssignmentStatement';
   readonly target: IdentifierNode | MemberExpressionNode;
   readonly value: ExpressionNode;
+}
+
+export interface TypeDeclarationNode extends BaseStatementNode {
+  readonly type: 'TypeDeclaration';
+  readonly name: IdentifierNode;
+  readonly fields: readonly TypeFieldNode[];
+}
+
+export interface TypeFieldNode {
+  readonly name: IdentifierNode;
+  readonly annotation: TypeAnnotationNode;
 }
 
 export interface IfStatementNode extends BaseStatementNode {
@@ -109,8 +122,11 @@ export interface ExpressionStatementNode extends BaseStatementNode {
 export type ExpressionNode =
   | NumberLiteralNode
   | StringLiteralNode
+  | BooleanLiteralNode
+  | NullLiteralNode
   | IdentifierNode
   | ArrayLiteralNode
+  | RecordLiteralNode
   | UnaryExpressionNode
   | BinaryExpressionNode
   | CallExpressionNode
@@ -135,16 +151,46 @@ export interface IdentifierNode {
   readonly token: Token;
 }
 
+export interface TypeAnnotationNode {
+  readonly type: 'TypeAnnotation';
+  readonly name: string;
+  readonly token: Token;
+  readonly typeArguments?: readonly TypeAnnotationNode[];
+}
+
 export interface ArrayLiteralNode {
   readonly type: 'ArrayLiteral';
   readonly elements: ExpressionNode[];
   readonly token: Token;
 }
 
+export interface RecordLiteralNode {
+  readonly type: 'RecordLiteral';
+  readonly typeName: IdentifierNode;
+  readonly fields: readonly RecordLiteralField[];
+  readonly token: Token;
+}
+
+export interface RecordLiteralField {
+  readonly name: IdentifierNode;
+  readonly value: ExpressionNode;
+}
+
 export interface UnaryExpressionNode {
   readonly type: 'UnaryExpression';
   readonly operator: Token;
   readonly operand: ExpressionNode;
+}
+
+export interface BooleanLiteralNode {
+  readonly type: 'BooleanLiteral';
+  readonly value: boolean;
+  readonly token: Token;
+}
+
+export interface NullLiteralNode {
+  readonly type: 'NullLiteral';
+  readonly token: Token;
 }
 
 export interface BinaryExpressionNode {

@@ -94,6 +94,34 @@ describe('tokenize', () => {
     ]);
   });
 
+  it('recognizes record literal braces and boolean/null literals', () => {
+    const tokens = tokenize('LET v = Vector { x: 1, y: TRUE, z: NULL }');
+    expect(tokens.map((t) => t.type)).toEqual([
+      TokenType.Keyword,
+      TokenType.Identifier,
+      TokenType.Operator,
+      TokenType.Identifier,
+      TokenType.LeftBrace,
+      TokenType.Identifier,
+      TokenType.Colon,
+      TokenType.Number,
+      TokenType.Comma,
+      TokenType.Identifier,
+      TokenType.Colon,
+      TokenType.Keyword,
+      TokenType.Comma,
+      TokenType.Identifier,
+      TokenType.Colon,
+      TokenType.Keyword,
+      TokenType.RightBrace,
+      TokenType.EOF
+    ]);
+    const trueToken = tokens.find((t) => t.lexeme === 'TRUE');
+    expect(trueToken?.literal).toBe(true);
+    const nullToken = tokens.find((t) => t.lexeme === 'NULL');
+    expect(nullToken?.literal).toBeNull();
+  });
+
   it('parses floating point and exponent notation', () => {
     const tokens = tokenize('VALUE = 1.5E-3');
     expect(tokens.map((t) => t.type)).toEqual([

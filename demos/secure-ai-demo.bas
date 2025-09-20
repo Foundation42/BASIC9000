@@ -4,13 +4,31 @@ REM ============================================
 REM
 REM This demo shows the SECURE way to use AI APIs
 REM No API keys in code!
+REM Now with TYPE definitions and modern syntax
 REM ============================================
+
+' Define types for structured configuration
+TYPE SecureConfig
+  hasKey AS BOOL
+  source AS STRING
+  temperature AS NUMBER
+  maxTokens AS NUMBER
+  model AS STRING
+END TYPE
+
+TYPE SecurityStatus
+  configLoaded AS BOOL
+  keyFound AS BOOL
+  aiCreated AS BOOL
+END TYPE
 
 PRINT "=== BASIC9000 Secure AI Demo ==="
 PRINT
 
 REM Check if config is loaded
-LET config_source$ = CONFIG.SOURCE()
+LET config_source$ AS STRING = CONFIG.SOURCE()
+LET status = SecurityStatus { configLoaded: FALSE, keyFound: FALSE, aiCreated: FALSE }
+
 IF config_source$ = "" THEN
   PRINT "⚠️  No config file found!"
   PRINT
@@ -25,24 +43,27 @@ IF config_source$ = "" THEN
   END
 ELSE
   PRINT "✓ Config loaded from: " + config_source$
+  status.configLoaded = TRUE
 END IF
 
 REM Check for API key in various places
-LET has_key = 0
+LET secureConf = SecureConfig { hasKey: FALSE, source: config_source$, temperature: 0.7, maxTokens: 150, model: "gpt-3.5-turbo" }
 
 REM Method 1: Check config file
 IF CONFIG.EXISTS("openai_api_key") THEN
   PRINT "✓ Found API key in config file"
-  LET has_key = 1
+  secureConf.hasKey = TRUE
+  status.keyFound = TRUE
 END IF
 
 REM Method 2: Check environment variables
 IF SYS.ENV("OPENAI_API_KEY") <> "" THEN
   PRINT "✓ Found API key in environment"
-  LET has_key = 1
+  secureConf.hasKey = TRUE
+  status.keyFound = TRUE
 END IF
 
-IF has_key = 0 THEN
+IF NOT secureConf.hasKey THEN
   PRINT "⚠️  No OpenAI API key found!"
   PRINT
   PRINT "Add to .basic9000.json:"
@@ -56,8 +77,9 @@ PRINT "=== Creating Secure AI Instance ==="
 REM The API key is found automatically!
 REM No need to put it in code
 TRY
-  LET ai = AI.CREATE("openai", "gpt-3.5-turbo")
+  LET ai = AI.CREATE("openai", secureConf.model)
   PRINT "✓ AI instance created successfully"
+  status.aiCreated = TRUE
 CATCH
   PRINT "✗ Failed to create AI instance"
   PRINT "  Please check your API key"
@@ -66,15 +88,15 @@ END TRY
 
 REM Configure from config file if available
 IF CONFIG.EXISTS("default_temperature") THEN
-  LET temp = VAL(CONFIG.GET("default_temperature"))
-  AI.TEMPERATURE(ai, temp)
-  PRINT "✓ Temperature set from config: " + STR$(temp)
+  secureConf.temperature = VAL(CONFIG.GET("default_temperature"))
+  AI.TEMPERATURE(ai, secureConf.temperature)
+  PRINT "✓ Temperature set from config: " + STR$(secureConf.temperature)
 END IF
 
 IF CONFIG.EXISTS("max_tokens") THEN
-  LET max_tokens = VAL(CONFIG.GET("max_tokens"))
-  AI.MAX_TOKENS(ai, max_tokens)
-  PRINT "✓ Max tokens set from config: " + STR$(max_tokens)
+  secureConf.maxTokens = VAL(CONFIG.GET("max_tokens"))
+  AI.MAX_TOKENS(ai, secureConf.maxTokens)
+  PRINT "✓ Max tokens set from config: " + STR$(secureConf.maxTokens)
 END IF
 
 PRINT
@@ -83,7 +105,7 @@ PRINT "Asking AI to write a haiku about security..."
 PRINT
 
 TRY
-  LET haiku$ = AI.GENERATE(ai, "Write a haiku about keeping API keys secure")
+  LET haiku$ AS STRING = AI.GENERATE(ai, "Write a haiku about keeping API keys secure")
   PRINT haiku$
   PRINT
   PRINT "✓ Success! Your AI is working securely!"
@@ -94,6 +116,9 @@ END TRY
 
 PRINT
 PRINT "=== Security Best Practices Demonstrated ==="
+IF status.configLoaded THEN PRINT "✓ Config file loaded successfully"
+IF status.keyFound THEN PRINT "✓ API key found in secure location"
+IF status.aiCreated THEN PRINT "✓ AI instance created without hardcoding"
 PRINT "✓ No API keys in source code"
 PRINT "✓ Config file is in .gitignore"
 PRINT "✓ Keys loaded from secure locations"
