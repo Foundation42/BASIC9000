@@ -24,7 +24,9 @@ export type StatementNode =
   | StopStatementNode
   | SpawnStatementNode
   | EndStatementNode
-  | ExpressionStatementNode;
+  | ExpressionStatementNode
+  | TryCatchStatementNode
+  | ErrorStatementNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -117,6 +119,21 @@ export interface SpawnStatementNode extends BaseStatementNode {
 export interface ExpressionStatementNode extends BaseStatementNode {
   readonly type: 'ExpressionStatement';
   readonly expression: ExpressionNode;
+}
+
+export interface TryCatchStatementNode extends BaseStatementNode {
+  readonly type: 'TryCatchStatement';
+  readonly tryBlock: StatementNode[];
+  readonly catchClause?: {
+    readonly variable: IdentifierNode;
+    readonly block: StatementNode[];
+  };
+  readonly finallyBlock?: StatementNode[];
+}
+
+export interface ErrorStatementNode extends BaseStatementNode {
+  readonly type: 'ErrorStatement';
+  readonly message: ExpressionNode;
 }
 
 export type ExpressionNode =

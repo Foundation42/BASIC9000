@@ -7,6 +7,7 @@ import type {
   BinaryExpressionNode,
   CallExpressionNode,
   EndStatementNode,
+  ErrorStatementNode,
   ExpressionNode,
   ExpressionStatementNode,
   ForStatementNode,
@@ -30,6 +31,7 @@ import type {
   StopStatementNode,
   StatementNode,
   StringLiteralNode,
+  TryCatchStatementNode,
   TypeAnnotationNode,
   TypeDeclarationNode,
   TypeFieldNode,
@@ -160,6 +162,16 @@ class Parser {
     if (this.matchKeyword('END')) {
       const keyword = this.previous();
       return { type: 'EndStatement', token: keyword } satisfies EndStatementNode;
+    }
+
+    if (this.matchKeyword('TRY')) {
+      const keyword = this.previous();
+      return this.parseTryCatchStatement(keyword);
+    }
+
+    if (this.matchKeyword('ERROR')) {
+      const keyword = this.previous();
+      return this.parseErrorStatement(keyword);
     }
 
     // Check for assignment (including member assignment like p.x = 5)
@@ -414,6 +426,108 @@ class Parser {
   private parseSpawnStatement(keyword: Token): SpawnStatementNode {
     const routine = this.parseExpression();
     return { type: 'SpawnStatement', token: keyword, routine } satisfies SpawnStatementNode;
+  }
+
+  private parseTryCatchStatement(keyword: Token): TryCatchStatementNode {
+    const tryBlock: StatementNode[] = [];
+    let catchClause: TryCatchStatementNode['catchClause'] = undefined;
+    let finallyBlock: StatementNode[] | undefined = undefined;
+
+    // Skip newlines after TRY
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    // Parse TRY block until CATCH, FINALLY, or END TRY
+    while (!this.isAtEnd()) {
+      if (this.isKeyword('CATCH') || this.isKeyword('FINALLY') ||
+          (this.isKeyword('END') && this.peekNextKeyword('TRY'))) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      tryBlock.push(this.parseStatement());
+    }
+
+    // Parse CATCH clause if present
+    if (this.matchKeyword('CATCH')) {
+      const catchVar = this.parseIdentifier();
+
+      // Skip newlines after CATCH variable
+      while (this.match(TokenType.Newline)) {
+        // consume
+      }
+
+      const catchBlock: StatementNode[] = [];
+      while (!this.isAtEnd()) {
+        if (this.isKeyword('FINALLY') ||
+            (this.isKeyword('END') && this.peekNextKeyword('TRY'))) {
+          break;
+        }
+
+        if (this.match(TokenType.Newline)) {
+          continue;
+        }
+
+        catchBlock.push(this.parseStatement());
+      }
+
+      catchClause = {
+        variable: catchVar,
+        block: catchBlock
+      };
+    }
+
+    // Parse FINALLY block if present
+    if (this.matchKeyword('FINALLY')) {
+      // Skip newlines after FINALLY
+      while (this.match(TokenType.Newline)) {
+        // consume
+      }
+
+      finallyBlock = [];
+      while (!this.isAtEnd()) {
+        if (this.isKeyword('END') && this.peekNextKeyword('TRY')) {
+          break;
+        }
+
+        if (this.match(TokenType.Newline)) {
+          continue;
+        }
+
+        finallyBlock.push(this.parseStatement());
+      }
+    }
+
+    // Expect END TRY
+    if (!this.matchKeyword('END')) {
+      throw new ParseError('Expected END TRY', this.peek());
+    }
+    if (!this.matchKeyword('TRY')) {
+      throw new ParseError('Expected TRY after END', this.peek());
+    }
+
+    return {
+      type: 'TryCatchStatement',
+      token: keyword,
+      tryBlock,
+      catchClause,
+      finallyBlock
+    } satisfies TryCatchStatementNode;
+  }
+
+  private parseErrorStatement(keyword: Token): ErrorStatementNode {
+    const message = this.parseExpression();
+    return { type: 'ErrorStatement', token: keyword, message } satisfies ErrorStatementNode;
+  }
+
+  private peekNextKeyword(keyword: string): boolean {
+    const next = this.tokens[this.current + 1];
+    if (!next) return false;
+    return next.type === TokenType.Keyword && next.lexeme.toUpperCase() === keyword.toUpperCase();
   }
 
   private parseExpression(): ExpressionNode {

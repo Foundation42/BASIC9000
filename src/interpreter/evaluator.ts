@@ -19,6 +19,8 @@ import type {
   ReturnStatementNode,
   SpawnStatementNode,
   StatementNode,
+  TryCatchStatementNode,
+  ErrorStatementNode,
   TypeAnnotationNode,
   TypeDeclarationNode,
   UnaryExpressionNode
@@ -321,6 +323,10 @@ class Evaluator {
       case 'TypeDeclaration':
         this.context.defineType(statement);
         return undefined;
+      case 'TryCatchStatement':
+        return this.executeTryCatch(statement, position);
+      case 'ErrorStatement':
+        return this.executeError(statement);
       default: {
         const exhaustiveCheck: never = statement;
         throw exhaustiveCheck;
@@ -368,6 +374,97 @@ class Evaluator {
       : `Routine ${name} already running`;
     this.context.writePrint([message], 'newline');
     return undefined;
+  }
+
+  private async executeTryCatch(
+    statement: TryCatchStatementNode,
+    position: StatementPosition
+  ): Promise<StatementSignal | undefined> {
+    let trySignal: StatementSignal | undefined = undefined;
+    let errorValue: RuntimeValue | undefined = undefined;
+
+    // Execute TRY block
+    try {
+      for (const stmt of statement.tryBlock) {
+        const signal = await this.executeStatement(stmt, position);
+        if (signal) {
+          trySignal = signal;
+          break;
+        }
+      }
+    } catch (error) {
+      // Caught an error - save it for CATCH block
+      if (error instanceof RuntimeError) {
+        errorValue = new RuntimeRecordValue('Error', [
+          ['message', error.message],
+          ['code', 0],
+          ['line', error.token?.line ?? null],
+          ['column', error.token?.column ?? null]
+        ]);
+      } else if (error instanceof Error) {
+        errorValue = new RuntimeRecordValue('Error', [
+          ['message', error.message],
+          ['code', 0]
+        ]);
+      } else {
+        errorValue = new RuntimeRecordValue('Error', [
+          ['message', String(error)],
+          ['code', 0]
+        ]);
+      }
+    }
+
+    // Execute CATCH block if there was an error and a catch clause exists
+    if (errorValue && statement.catchClause) {
+      // Set the catch variable
+      const savedVar = this.context.hasVariable(statement.catchClause.variable.name)
+        ? this.context.getVariable(statement.catchClause.variable.name)
+        : undefined;
+
+      this.context.setVariable(statement.catchClause.variable.name, errorValue, statement.token);
+
+      try {
+        for (const stmt of statement.catchClause.block) {
+          const signal = await this.executeStatement(stmt, position);
+          if (signal) {
+            trySignal = signal;
+            break;
+          }
+        }
+      } finally {
+        // Restore the catch variable
+        if (savedVar !== undefined) {
+          this.context.setVariable(statement.catchClause.variable.name, savedVar, statement.token);
+        }
+      }
+
+      // Clear the error since it was handled
+      errorValue = undefined;
+    }
+
+    // Execute FINALLY block if present
+    if (statement.finallyBlock) {
+      for (const stmt of statement.finallyBlock) {
+        const signal = await this.executeStatement(stmt, position);
+        if (signal) {
+          trySignal = signal;
+          break;
+        }
+      }
+    }
+
+    // Re-throw error if it wasn't handled
+    if (errorValue) {
+      const message = errorValue.get('message');
+      throw new RuntimeError(toStringValue(message ?? 'Unknown error'), statement.token);
+    }
+
+    return trySignal;
+  }
+
+  private async executeError(statement: ErrorStatementNode): Promise<StatementSignal | undefined> {
+    const message = await this.evaluateExpression(statement.message);
+    throw new RuntimeError(toStringValue(message), statement.token);
   }
 
   private async executePrint(statement: PrintStatementNode): Promise<StatementSignal | undefined> {
