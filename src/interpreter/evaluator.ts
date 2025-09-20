@@ -322,18 +322,28 @@ class Evaluator {
   }
 
   private async executeLet(statement: LetStatementNode): Promise<StatementSignal | undefined> {
-    const target = this.evaluateAssignmentTarget(statement.target);
     const value = await this.evaluateExpression(statement.value);
-    this.context.setVariable(target.name, value, statement.token);
+
+    if (statement.target.type === 'Identifier') {
+      this.context.setVariable(statement.target.name, value, statement.token);
+    } else {
+      // MemberExpression - for field assignment
+      await this.assignToMember(statement.target, value);
+    }
     return undefined;
   }
 
   private async executeAssignment(
     statement: AssignmentStatementNode
   ): Promise<StatementSignal | undefined> {
-    const target = this.evaluateAssignmentTarget(statement.target);
     const value = await this.evaluateExpression(statement.value);
-    this.context.setVariable(target.name, value, statement.token);
+
+    if (statement.target.type === 'Identifier') {
+      this.context.setVariable(statement.target.name, value, statement.token);
+    } else {
+      // MemberExpression - for field assignment
+      await this.assignToMember(statement.target, value);
+    }
     return undefined;
   }
 
@@ -397,11 +407,44 @@ class Evaluator {
     return { type: 'jump', targetLineIndex: index, targetStatementIndex: 0 };
   }
 
-  private evaluateAssignmentTarget(target: IdentifierNode | MemberExpressionNode): IdentifierNode {
-    if (target.type === 'Identifier') {
-      return target;
+  private async assignToMember(target: MemberExpressionNode, value: RuntimeValue): Promise<void> {
+    // For member assignment like p.x = 5, we need to:
+    // 1. If target.object is an Identifier, get the variable directly (not a copy)
+    // 2. If it's a record, update its field
+
+    if (target.object.type === 'Identifier') {
+      // Get the actual record from the context
+      const recordValue = this.context.getVariable(target.object.name);
+
+      if (isRecordValue(recordValue)) {
+        const fieldName = target.property.name;
+        if (!recordValue.has(fieldName)) {
+          throw new RuntimeError(
+            `Type '${recordValue.typeName}' has no field '${fieldName}'`,
+            target.property.token
+          );
+        }
+        recordValue.set(fieldName, value);
+        return;
+      }
     }
-    throw new RuntimeError('Member assignment is not supported yet', target.property.token);
+
+    // For more complex expressions (like nested member access), evaluate the object
+    const objectValue = await this.evaluateExpression(target.object);
+
+    if (isRecordValue(objectValue)) {
+      const fieldName = target.property.name;
+      if (!objectValue.has(fieldName)) {
+        throw new RuntimeError(
+          `Type '${objectValue.typeName}' has no field '${fieldName}'`,
+          target.property.token
+        );
+      }
+      objectValue.set(fieldName, value);
+      return;
+    }
+
+    throw new RuntimeError('Property assignment is not supported for this value', target.property.token);
   }
 
   private async evaluateExpression(expression: ExpressionNode): Promise<RuntimeValue> {

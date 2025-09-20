@@ -20,6 +20,10 @@ export class RuntimeRecordValue {
     return this.data.has(field);
   }
 
+  public set(field: string, value: RuntimeValue): void {
+    this.data.set(field, value);
+  }
+
   public entries(): [string, RuntimeValue][] {
     return Array.from(this.data.entries());
   }

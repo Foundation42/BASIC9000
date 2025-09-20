@@ -162,8 +162,24 @@ class Parser {
       return { type: 'EndStatement', token: keyword } satisfies EndStatementNode;
     }
 
-    if (this.check(TokenType.Identifier) && this.checkNextIsAssignment()) {
-      return this.parseAssignmentStatement();
+    // Check for assignment (including member assignment like p.x = 5)
+    if (this.check(TokenType.Identifier)) {
+      const savedPosition = this.current;
+
+      // Try to parse as assignment target
+      try {
+        this.parseAssignmentTarget(); // Just parse to check if valid
+        if (this.check(TokenType.Operator) && this.peek().lexeme === '=') {
+          // It's an assignment!
+          this.current = savedPosition; // Reset and parse properly
+          return this.parseAssignmentStatement();
+        }
+      } catch {
+        // Not a valid assignment target
+      }
+
+      // Reset position
+      this.current = savedPosition;
     }
 
     const expression = this.parseExpression();
@@ -710,13 +726,6 @@ class Parser {
     return this.check(TokenType.Newline) || this.check(TokenType.EOF);
   }
 
-  private checkNextIsAssignment(): boolean {
-    const next = this.peekNext();
-    if (!next) {
-      return false;
-    }
-    return next.type === TokenType.Operator && next.lexeme === '=';
-  }
 
   private getExpressionToken(expression: ExpressionNode): Token {
     switch (expression.type) {
@@ -788,10 +797,6 @@ class Parser {
 
   private peek(): Token {
     return this.tokens[this.current];
-  }
-
-  private peekNext(): Token | undefined {
-    return this.tokens[this.current + 1];
   }
 
   private isAtEnd(): boolean {
