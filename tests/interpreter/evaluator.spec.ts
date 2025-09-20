@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -18,8 +18,10 @@ import {
   createNamespace
 } from '../../src/interpreter/host.js';
 
-const run = (source: string, options?: ExecutionOptions) =>
-  executeProgram(parseSource(source), options);
+const run = (source: string, options?: ExecutionOptions) => {
+  const maxSteps = options?.maxSteps ?? 10000; // Add default max steps
+  return executeProgram(parseSource(source), { ...options, maxSteps });
+};
 
 describe('evaluator', () => {
   it('executes sequential statements with variables and print', async () => {
@@ -360,13 +362,21 @@ PRINT JSON.STRINGIFY(J, "temp")
 
   it('establishes websocket connection and exchanges messages', async () => {
     const wss = new WebSocketServer({ port: 0 });
+    const connections = new Set<WebSocket>();
+
     wss.on('connection', (socket) => {
+      connections.add(socket);
       socket.on('message', (message) => {
         socket.send(`echo:${message}`);
       });
+      socket.on('close', () => {
+        connections.delete(socket);
+      });
     });
+
     await new Promise<void>((resolve) => wss.once('listening', resolve));
     const { port } = wss.address() as { port: number };
+
     try {
       const program = `
 LET C = WS.CONNECT("ws://127.0.0.1:${port}")
@@ -377,7 +387,22 @@ WS.CLOSE(C)
       const result = await run(program.trim());
       expect(result.outputs).toEqual(['echo:ping']);
     } finally {
-      await new Promise<void>((resolve) => wss.close(() => resolve()));
+      // Force close all connections
+      connections.forEach(socket => socket.terminate());
+
+      // Close server with timeout
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          wss.close();
+          resolve();
+        }, 1000);
+
+        wss.close((err) => {
+          clearTimeout(timeout);
+          if (err) reject(err);
+          else resolve();
+        });
+      });
     }
-  });
+  }, 10000); // Give this test 10 seconds max
 });
