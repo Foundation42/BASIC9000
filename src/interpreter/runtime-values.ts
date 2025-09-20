@@ -1,4 +1,5 @@
 import type { HostFunctionValue, HostNamespaceValue } from './host.js';
+import type { ParameterNode, StatementNode, TypeAnnotationNode } from './ast.js';
 
 export type RuntimeScalar = number | string | boolean | null;
 
@@ -37,10 +38,21 @@ export class RuntimeRecordValue {
   }
 }
 
+export interface UserFunctionValue {
+  readonly kind: 'user-function';
+  readonly name: string;
+  readonly parameters: readonly ParameterNode[];
+  readonly returnType: TypeAnnotationNode | undefined;
+  readonly body: readonly StatementNode[];
+  readonly isAsync: boolean;
+  readonly isSub?: boolean;
+}
+
 export type RuntimeValue =
   | RuntimeScalar
   | HostNamespaceValue
   | HostFunctionValue
+  | UserFunctionValue
   | RuntimeArray
   | RuntimeRecordValue;
 

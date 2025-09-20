@@ -4,7 +4,9 @@ import type {
   BinaryExpressionNode,
   CallExpressionNode,
   ExpressionNode,
+  ExitStatementNode,
   ForStatementNode,
+  FunctionStatementNode,
   GosubStatementNode,
   GotoStatementNode,
   IdentifierNode,
@@ -19,6 +21,7 @@ import type {
   ReturnStatementNode,
   SpawnStatementNode,
   StatementNode,
+  SubStatementNode,
   TryCatchStatementNode,
   ErrorStatementNode,
   TypeAnnotationNode,
@@ -32,7 +35,7 @@ import {
   isHostNamespace
 } from './host.js';
 import { createDefaultHostEnvironment } from './host-defaults.js';
-import { RuntimeRecordValue, isRecordValue, type RuntimeValue } from './runtime-values.js';
+import { RuntimeRecordValue, isRecordValue, type RuntimeValue, type UserFunctionValue } from './runtime-values.js';
 import { parseSource, type ParserOptions } from './parser.js';
 import type { Token } from './tokenizer.js';
 
@@ -126,6 +129,17 @@ class ExecutionContext {
   public hasVariable(name: string): boolean {
     const key = normalizeIdentifier(name);
     return this.variables.has(key);
+  }
+
+  public saveScope(): Map<string, RuntimeValue> {
+    return new Map(this.variables);
+  }
+
+  public restoreScope(saved: Map<string, RuntimeValue>): void {
+    this.variables.clear();
+    for (const [key, value] of saved) {
+      this.variables.set(key, value);
+    }
   }
 
   public writePrint(args: string[], trailing: PrintStatementNode['trailing']): void {
@@ -327,6 +341,12 @@ class Evaluator {
         return this.executeTryCatch(statement, position);
       case 'ErrorStatement':
         return this.executeError(statement);
+      case 'FunctionStatement':
+        return this.executeFunction(statement);
+      case 'SubStatement':
+        return this.executeSub(statement);
+      case 'ExitStatement':
+        return this.executeExit(statement);
       default: {
         const exhaustiveCheck: never = statement;
         throw exhaustiveCheck;
@@ -918,17 +938,59 @@ class Evaluator {
     return { type: 'jump', targetLineIndex: lineIndex, targetStatementIndex: 0 };
   }
 
-  private executeReturn(statement: ReturnStatementNode): StatementSignal {
-    if (this.gosubStack.length === 0) {
-      throw new RuntimeError('RETURN without GOSUB', statement.token);
+  private async executeFunction(statement: FunctionStatementNode): Promise<undefined> {
+    // Store function definition in context
+    const functionValue: UserFunctionValue = {
+      kind: 'user-function',
+      name: statement.name.name,
+      parameters: statement.parameters,
+      returnType: statement.returnType,
+      body: statement.body,
+      isAsync: false
+    };
+    this.context.setVariable(statement.name.name, functionValue, statement.name.token);
+    return undefined;
+  }
+
+  private async executeSub(statement: SubStatementNode): Promise<undefined> {
+    // Store sub definition in context
+    const subValue: UserFunctionValue = {
+      kind: 'user-function',
+      name: statement.name.name,
+      parameters: statement.parameters,
+      returnType: undefined, // SUBs don't return values
+      body: statement.body,
+      isAsync: false,
+      isSub: true
+    };
+    this.context.setVariable(statement.name.name, subValue, statement.name.token);
+    return undefined;
+  }
+
+  private async executeExit(statement: ExitStatementNode): Promise<StatementSignal> {
+    // EXIT SUB or EXIT FUNCTION acts like RETURN
+    return { type: 'return', value: null };
+  }
+
+  private async executeReturn(statement: ReturnStatementNode): Promise<StatementSignal> {
+    // Check if this is a function/sub return or a GOSUB return
+    // For now, we'll handle GOSUB returns here
+    if (statement.value === undefined && this.gosubStack.length > 0) {
+      // GOSUB style return
+      const pointer = this.gosubStack.pop()!;
+      return {
+        type: 'jump',
+        targetLineIndex: pointer.lineIndex,
+        targetStatementIndex: pointer.statementIndex
+      };
     }
 
-    const pointer = this.gosubStack.pop()!;
-    return {
-      type: 'jump',
-      targetLineIndex: pointer.lineIndex,
-      targetStatementIndex: pointer.statementIndex
-    };
+    // Function/Sub return
+    let value: RuntimeValue = null;
+    if (statement.value) {
+      value = await this.evaluateExpression(statement.value);
+    }
+    return { type: 'return', value };
   }
 
   private ensureCallDepthWithinBudget(token: Token): void {
@@ -964,7 +1026,62 @@ class Evaluator {
       }
     }
 
+    // Check for user-defined functions
+    if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'user-function') {
+      const func = callee as UserFunctionValue;
+      return this.executeUserFunction(func, args, token);
+    }
+
     throw new RuntimeError('Value is not callable', token);
+  }
+
+  private async executeUserFunction(
+    func: UserFunctionValue,
+    args: RuntimeValue[],
+    token: Token
+  ): Promise<RuntimeValue> {
+    // Create a new scope for function execution
+    const previousScope = this.context.saveScope();
+
+    try {
+      // Bind parameters to arguments
+      for (let i = 0; i < func.parameters.length; i++) {
+        const param = func.parameters[i];
+        if (!param) continue;
+
+        if (param.isVarArgs) {
+          // Collect remaining args into array
+          this.context.setVariable(param.name.name, args.slice(i), token);
+          break;
+        }
+
+        let value = args[i];
+        if (value === undefined && param.defaultValue) {
+          value = await this.evaluateExpression(param.defaultValue);
+        } else if (value === undefined) {
+          value = null;
+        }
+
+        this.context.setVariable(param.name.name, value, token);
+      }
+
+      // Execute function body
+      for (const stmt of func.body) {
+        const signal = await this.executeStatement(stmt, { lineIndex: 0, statementIndex: 0 });
+        if (signal?.type === 'return') {
+          return signal.value;
+        }
+        if (signal?.type === 'halt') {
+          return null;
+        }
+      }
+
+      // If no explicit return, return null
+      return func.isSub ? null : null;
+    } finally {
+      // Restore previous scope
+      this.context.restoreScope(previousScope);
+    }
   }
 
   private makeHostFunctionContext(token: Token): HostFunctionContext {
@@ -994,7 +1111,12 @@ interface StatementSignalHalt {
   readonly reason: 'END' | 'STOP';
 }
 
-type StatementSignal = StatementSignalJump | StatementSignalHalt | undefined;
+interface StatementSignalReturn {
+  readonly type: 'return';
+  readonly value: RuntimeValue;
+}
+
+type StatementSignal = StatementSignalJump | StatementSignalHalt | StatementSignalReturn | undefined;
 
 interface StatementPointer {
   readonly lineIndex: number;

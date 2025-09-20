@@ -26,7 +26,10 @@ export type StatementNode =
   | EndStatementNode
   | ExpressionStatementNode
   | TryCatchStatementNode
-  | ErrorStatementNode;
+  | ErrorStatementNode
+  | FunctionStatementNode
+  | SubStatementNode
+  | ExitStatementNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -101,6 +104,7 @@ export interface GosubStatementNode extends BaseStatementNode {
 
 export interface ReturnStatementNode extends BaseStatementNode {
   readonly type: 'ReturnStatement';
+  readonly value?: ExpressionNode;
 }
 
 export interface StopStatementNode extends BaseStatementNode {
@@ -134,6 +138,34 @@ export interface TryCatchStatementNode extends BaseStatementNode {
 export interface ErrorStatementNode extends BaseStatementNode {
   readonly type: 'ErrorStatement';
   readonly message: ExpressionNode;
+}
+
+export interface FunctionStatementNode extends BaseStatementNode {
+  readonly type: 'FunctionStatement';
+  readonly name: IdentifierNode;
+  readonly parameters: ParameterNode[];
+  readonly returnType?: TypeAnnotationNode;
+  readonly body: StatementNode[];
+}
+
+export interface SubStatementNode extends BaseStatementNode {
+  readonly type: 'SubStatement';
+  readonly name: IdentifierNode;
+  readonly parameters: ParameterNode[];
+  readonly body: StatementNode[];
+}
+
+export interface ParameterNode {
+  readonly name: IdentifierNode;
+  readonly typeAnnotation?: TypeAnnotationNode;
+  readonly defaultValue?: ExpressionNode;
+  readonly isRef?: boolean;
+  readonly isVarArgs?: boolean;
+}
+
+export interface ExitStatementNode extends BaseStatementNode {
+  readonly type: 'ExitStatement';
+  readonly exitType: 'SUB' | 'FUNCTION';
 }
 
 export type ExpressionNode =

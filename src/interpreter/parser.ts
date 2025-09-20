@@ -8,9 +8,11 @@ import type {
   CallExpressionNode,
   EndStatementNode,
   ErrorStatementNode,
+  ExitStatementNode,
   ExpressionNode,
   ExpressionStatementNode,
   ForStatementNode,
+  FunctionStatementNode,
   GosubStatementNode,
   GotoStatementNode,
   IdentifierNode,
@@ -21,6 +23,7 @@ import type {
   NextStatementNode,
   NullLiteralNode,
   NumberLiteralNode,
+  ParameterNode,
   SpawnStatementNode,
   PrintArgument,
   PrintStatementNode,
@@ -31,6 +34,7 @@ import type {
   StopStatementNode,
   StatementNode,
   StringLiteralNode,
+  SubStatementNode,
   TryCatchStatementNode,
   TypeAnnotationNode,
   TypeDeclarationNode,
@@ -146,7 +150,27 @@ class Parser {
 
     if (this.matchKeyword('RETURN')) {
       const keyword = this.previous();
-      return { type: 'ReturnStatement', token: keyword } satisfies ReturnStatementNode;
+      // Check if RETURN has a value (for functions)
+      let value: ExpressionNode | undefined;
+      if (!this.checkTerminator() && !this.check(TokenType.Colon)) {
+        value = this.parseExpression();
+      }
+      return { type: 'ReturnStatement', token: keyword, value } satisfies ReturnStatementNode;
+    }
+
+    if (this.matchKeyword('FUNCTION')) {
+      const keyword = this.previous();
+      return this.parseFunctionStatement(keyword);
+    }
+
+    if (this.matchKeyword('SUB')) {
+      const keyword = this.previous();
+      return this.parseSubStatement(keyword);
+    }
+
+    if (this.matchKeyword('EXIT')) {
+      const keyword = this.previous();
+      return this.parseExitStatement(keyword);
     }
 
     if (this.matchKeyword('SPAWN')) {
@@ -523,6 +547,172 @@ class Parser {
   private parseErrorStatement(keyword: Token): ErrorStatementNode {
     const message = this.parseExpression();
     return { type: 'ErrorStatement', token: keyword, message } satisfies ErrorStatementNode;
+  }
+
+  private parseFunctionStatement(keyword: Token): FunctionStatementNode {
+    const name = this.parseIdentifier();
+
+    // Parse parameters
+    this.consume(TokenType.LeftParen, 'Expected ( after function name');
+    const parameters = this.parseParameterList();
+    this.consume(TokenType.RightParen, 'Expected ) after parameters');
+
+    // Parse return type if present
+    let returnType: TypeAnnotationNode | undefined;
+    if (this.isKeyword('AS')) {
+      this.consumeKeyword('AS');
+      returnType = this.parseTypeAnnotation();
+    }
+
+    // Skip newlines
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    // Parse function body
+    const body: StatementNode[] = [];
+    while (!this.isAtEnd()) {
+      if (this.isKeyword('END') && this.peekNextKeyword('FUNCTION')) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      body.push(this.parseStatement());
+    }
+
+    // Consume END FUNCTION
+    if (!this.matchKeyword('END')) {
+      throw new ParseError('Expected END FUNCTION', this.peek());
+    }
+    if (!this.matchKeyword('FUNCTION')) {
+      throw new ParseError('Expected FUNCTION after END', this.peek());
+    }
+
+    return {
+      type: 'FunctionStatement',
+      token: keyword,
+      name,
+      parameters,
+      returnType,
+      body
+    } satisfies FunctionStatementNode;
+  }
+
+  private parseSubStatement(keyword: Token): SubStatementNode {
+    const name = this.parseIdentifier();
+
+    // Parse parameters
+    this.consume(TokenType.LeftParen, 'Expected ( after sub name');
+    const parameters = this.parseParameterList();
+    this.consume(TokenType.RightParen, 'Expected ) after parameters');
+
+    // Skip newlines
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    // Parse sub body
+    const body: StatementNode[] = [];
+    while (!this.isAtEnd()) {
+      if (this.isKeyword('END') && this.peekNextKeyword('SUB')) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      body.push(this.parseStatement());
+    }
+
+    // Consume END SUB
+    if (!this.matchKeyword('END')) {
+      throw new ParseError('Expected END SUB', this.peek());
+    }
+    if (!this.matchKeyword('SUB')) {
+      throw new ParseError('Expected SUB after END', this.peek());
+    }
+
+    return {
+      type: 'SubStatement',
+      token: keyword,
+      name,
+      parameters,
+      body
+    } satisfies SubStatementNode;
+  }
+
+  private parseExitStatement(keyword: Token): ExitStatementNode {
+    let exitType: 'SUB' | 'FUNCTION';
+    if (this.matchKeyword('SUB')) {
+      exitType = 'SUB';
+    } else if (this.matchKeyword('FUNCTION')) {
+      exitType = 'FUNCTION';
+    } else {
+      throw new ParseError('Expected SUB or FUNCTION after EXIT', this.peek());
+    }
+
+    return {
+      type: 'ExitStatement',
+      token: keyword,
+      exitType
+    } satisfies ExitStatementNode;
+  }
+
+  private parseParameterList(): ParameterNode[] {
+    const parameters: ParameterNode[] = [];
+
+    if (this.check(TokenType.RightParen)) {
+      return parameters;
+    }
+
+    do {
+      let isRef = false;
+      let isVarArgs = false;
+
+      // Check for REF keyword
+      if (this.matchKeyword('REF')) {
+        isRef = true;
+      }
+
+      // Check for varargs (...)
+      if (this.matchOperator('...')) {
+        isVarArgs = true;
+        parameters.push({
+          name: { type: 'Identifier', name: 'varargs', token: this.previous() },
+          isVarArgs
+        });
+        break; // Varargs must be last
+      }
+
+      const name = this.parseIdentifier();
+      let typeAnnotation: TypeAnnotationNode | undefined;
+      let defaultValue: ExpressionNode | undefined;
+
+      // Parse type annotation
+      if (this.isKeyword('AS')) {
+        this.consumeKeyword('AS');
+        typeAnnotation = this.parseTypeAnnotation();
+      }
+
+      // Parse default value
+      if (this.check(TokenType.Operator) && this.peek().lexeme === '=') {
+        this.advance(); // consume =
+        defaultValue = this.parseExpression();
+      }
+
+      parameters.push({
+        name,
+        typeAnnotation,
+        defaultValue,
+        isRef
+      });
+    } while (this.match(TokenType.Comma));
+
+    return parameters;
   }
 
   private peekNextKeyword(keyword: string): boolean {
