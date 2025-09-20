@@ -1,10 +1,18 @@
 // BASIC9000 Syntax Highlighter for Terminal Display
 
 const KEYWORDS = [
+  // Core BASIC keywords
   'LET', 'PRINT', 'IF', 'THEN', 'ELSE', 'END', 'FOR', 'TO', 'NEXT', 'WHILE', 'WEND',
   'DO', 'LOOP', 'GOTO', 'GOSUB', 'RETURN', 'REM', 'DIM', 'FUNCTION', 'SUB',
-  'SELECT', 'CASE', 'SPAWN', 'ROUTINE', 'WITH', 'TRY', 'CATCH', 'STOP', 'RUN',
-  'LIST', 'CLEAR', 'HELP', 'TRACE', 'BREAK', 'DESCRIBE', 'ASYNC', 'AWAIT'
+  // Modern control flow
+  'SELECT', 'CASE', 'SPAWN', 'ROUTINE', 'WITH', 'TRY', 'CATCH', 'FINALLY', 'THROW',
+  'EXIT', 'CALL', 'ASYNC', 'AWAIT',
+  // Type system
+  'TYPE', 'AS', 'PROPERTY', 'REF', 'SPREAD', 'CONST',
+  // Data types and literals
+  'TRUE', 'FALSE', 'NULL',
+  // Terminal commands
+  'STOP', 'RUN', 'LIST', 'CLEAR', 'HELP', 'TRACE', 'BREAK', 'DESCRIBE'
 ];
 
 const BUILT_IN_FUNCTIONS = [
@@ -12,7 +20,29 @@ const BUILT_IN_FUNCTIONS = [
   'GET', 'POST', 'STATUS', 'PARSE', 'STRINGIFY', 'SORT', 'REVERSE', 'JOIN',
   'LENGTH', 'LEFT', 'RIGHT', 'MID', 'FIND', 'REPLACE', 'NOW', 'FORMAT',
   'SLEEP', 'PLATFORM', 'TICKS', 'READ', 'WRITE', 'DELETE', 'APPEND', 'COPY',
-  'BELL', 'OVERLAY', 'CONNECT', 'SEND', 'RECEIVE', 'CLOSE'
+  'BELL', 'OVERLAY', 'CONNECT', 'SEND', 'RECEIVE', 'CLOSE',
+  // AI namespace
+  'AI', 'CREATE', 'CHAT', 'KEY', 'ANTHROPIC', 'OPENAI',
+  // Math namespace
+  'MATH', 'PI', 'E', 'SIN', 'COS', 'TAN', 'ATN', 'SQR', 'ABS', 'INT', 'RND', 'SGN',
+  'EXP', 'LOG', 'SQRT', 'POW', 'FLOOR', 'CEIL', 'ROUND', 'LOG10', 'MIN', 'MAX',
+  'CLAMP', 'DEG2RAD', 'RAD2DEG', 'DISTANCE',
+  // Canvas namespace
+  'CANVAS', 'NEW', 'SIZE', 'CLEAR', 'LINE', 'RECT', 'CIRCLE', 'ARC', 'ELLIPSE',
+  'TRIANGLE', 'POLYGON', 'BEZIER', 'QUADRATIC', 'TEXT', 'FILL', 'STROKE', 'COLOR',
+  'LINEWIDTH', 'LINECAP', 'LINEJOIN', 'FONT', 'TEXTALIGN', 'SAVE', 'RESTORE',
+  'TRANSLATE', 'ROTATE', 'SCALE', 'TRANSFORM', 'SETTRANSFORM', 'RESETRANSFORM',
+  'CLIP', 'BEGINPATH', 'CLOSEPATH', 'MOVETO', 'LINETO', 'CURVETO', 'QUADTO',
+  'ARCTO', 'GRADIENT', 'PATTERN', 'IMAGE', 'GETPIXEL', 'SETPIXEL', 'IMAGEDATA',
+  'PUTIMAGEDATA', 'GETIMAGEDATA', 'CREATEIMAGEDATA', 'SHADOW', 'GLOBALPHA',
+  'COMPOSITE', 'BLEND', 'FILTER', 'MOUSEX', 'MOUSEY', 'CLICKED', 'SHOW', 'HIDE',
+  'ZINDEX', 'DESTROY',
+  // Config namespace
+  'CONFIG', 'LOAD',
+  // Random namespace
+  'RANDOM',
+  // String functions (global)
+  'MID$', 'LEFT$', 'RIGHT$', 'INSTR', 'SPACE$', 'STRING$', 'STR$', 'CHR$', 'VAL', 'ASC', 'LEN'
 ];
 
 const COLORS = {
