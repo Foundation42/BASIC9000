@@ -221,6 +221,7 @@ export type ExpressionNode =
   | ConditionalExpressionNode
   | CallExpressionNode
   | MemberExpressionNode
+  | IndexExpressionNode
   | AwaitExpressionNode
   | WithFieldNode
   | SpreadExpressionNode;
@@ -322,6 +323,12 @@ export interface MemberExpressionNode {
   readonly type: 'MemberExpression';
   readonly object: ExpressionNode;
   readonly property: IdentifierNode;
+}
+
+export interface IndexExpressionNode {
+  readonly type: 'IndexExpression';
+  readonly object: ExpressionNode;
+  readonly index: ExpressionNode;
 }
 
 export interface AwaitExpressionNode {

@@ -1,6 +1,7 @@
 import type {
   ArrayLiteralNode,
   ObjectLiteralNode,
+  IndexExpressionNode,
   AssignmentStatementNode,
   BinaryExpressionNode,
   CallExpressionNode,
@@ -736,6 +737,8 @@ class Evaluator {
         return this.evaluateCallExpression(expression);
       case 'MemberExpression':
         return this.evaluateMemberExpression(expression);
+      case 'IndexExpression':
+        return this.evaluateIndexExpression(expression);
       case 'AwaitExpression':
         throw new RuntimeError('AWAIT is not supported in this context', expression.keyword);
       case 'WithField':
@@ -911,6 +914,36 @@ class Evaluator {
     }
 
     throw new RuntimeError('Property access is not supported for this value', expression.property.token);
+  }
+
+  private async evaluateIndexExpression(expression: IndexExpressionNode): Promise<RuntimeValue> {
+    const objectValue = await this.evaluateExpression(expression.object);
+    const indexValue = await this.evaluateExpression(expression.index);
+
+    // Handle array indexing
+    if (Array.isArray(objectValue)) {
+      if (typeof indexValue !== 'number') {
+        throw new RuntimeError('Array index must be a number', this.getExpressionToken(expression.index));
+      }
+      const index = Math.floor(indexValue);
+      if (index < 0 || index >= objectValue.length) {
+        throw new RuntimeError(`Array index ${index} out of bounds (length: ${objectValue.length})`, this.getExpressionToken(expression.index));
+      }
+      return objectValue[index];
+    }
+
+    // Handle record/object indexing
+    if (isRecordValue(objectValue)) {
+      if (typeof indexValue !== 'string') {
+        throw new RuntimeError('Record index must be a string', this.getExpressionToken(expression.index));
+      }
+      if (!objectValue.has(indexValue)) {
+        throw new RuntimeError(`Record does not have field '${indexValue}'`, this.getExpressionToken(expression.index));
+      }
+      return objectValue.get(indexValue)!;
+    }
+
+    throw new RuntimeError('Index access is not supported for this value', this.getExpressionToken(expression.object));
   }
 
   private async evaluateCallExpression(expression: CallExpressionNode): Promise<RuntimeValue> {
@@ -1647,6 +1680,47 @@ class Evaluator {
     }
     const message = error instanceof Error ? error.message : String(error);
     return new RuntimeError(`Host function error: ${message}`, token);
+  }
+
+  private getExpressionToken(expression: ExpressionNode): Token {
+    switch (expression.type) {
+      case 'NumberLiteral':
+      case 'StringLiteral':
+      case 'Identifier':
+        return expression.token;
+      case 'UnaryExpression':
+        return expression.operator;
+      case 'BinaryExpression':
+        return this.getExpressionToken(expression.left);
+      case 'CallExpression':
+        return this.getExpressionToken(expression.callee);
+      case 'MemberExpression':
+        return this.getExpressionToken(expression.object);
+      case 'IndexExpression':
+        return this.getExpressionToken(expression.object);
+      case 'AwaitExpression':
+        return expression.keyword;
+      case 'ArrayLiteral':
+        return expression.token;
+      case 'ObjectLiteral':
+        return expression.token;
+      case 'BooleanLiteral':
+        return expression.token;
+      case 'NullLiteral':
+        return expression.token;
+      case 'RecordLiteral':
+        return expression.token;
+      case 'WithField':
+        return expression.token;
+      case 'ConditionalExpression':
+        return expression.questionToken;
+      case 'SpreadExpression':
+        return expression.token;
+      default: {
+        const exhaustiveCheck: never = expression;
+        throw exhaustiveCheck;
+      }
+    }
   }
 }
 

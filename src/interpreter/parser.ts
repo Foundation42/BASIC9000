@@ -8,6 +8,7 @@ import type {
   BooleanLiteralNode,
   BinaryExpressionNode,
   CallExpressionNode,
+  IndexExpressionNode,
   EndStatementNode,
   ErrorStatementNode,
   ExitStatementNode,
@@ -1148,6 +1149,13 @@ class Parser {
         continue;
       }
 
+      if (this.match(TokenType.LeftBracket)) {
+        const index = this.parseExpression();
+        this.consume(TokenType.RightBracket, 'Expected closing bracket after array index');
+        expr = { type: 'IndexExpression', object: expr, index } satisfies IndexExpressionNode;
+        continue;
+      }
+
       if (this.match(TokenType.DotDotDot)) {
         const token = this.previous();
         expr = { type: 'SpreadExpression', token, target: expr } satisfies SpreadExpressionNode;
@@ -1392,6 +1400,8 @@ class Parser {
       case 'CallExpression':
         return this.getExpressionToken(expression.callee);
       case 'MemberExpression':
+        return this.getExpressionToken(expression.object);
+      case 'IndexExpression':
         return this.getExpressionToken(expression.object);
       case 'AwaitExpression':
         return expression.keyword;
