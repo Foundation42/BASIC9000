@@ -212,6 +212,14 @@ class Parser {
       return this.parseErrorStatement(keyword);
     }
 
+    if (this.matchKeyword('CALL')) {
+      // CALL is optional syntax for calling SUBs
+      // Just parse the expression statement that follows
+      const expression = this.parseExpression();
+      const token = this.getExpressionToken(expression);
+      return { type: 'ExpressionStatement', token, expression } satisfies ExpressionStatementNode;
+    }
+
     // Check for assignment (including member assignment like p.x = 5 and WITH field .x = 5)
     if (this.check(TokenType.Identifier) || this.check(TokenType.Dot)) {
       const savedPosition = this.current;

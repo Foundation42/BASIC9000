@@ -54,6 +54,22 @@ export interface BoundFunctionValue {
   readonly boundThis: RuntimeValue;
 }
 
+export class RefValue {
+  constructor(
+    public readonly varName: string,
+    private readonly getterFunc: () => RuntimeValue,
+    private readonly setterFunc: (value: RuntimeValue) => void
+  ) {}
+
+  public get(): RuntimeValue {
+    return this.getterFunc();
+  }
+
+  public set(newValue: RuntimeValue): void {
+    this.setterFunc(newValue);
+  }
+}
+
 export type RuntimeValue =
   | RuntimeScalar
   | HostNamespaceValue

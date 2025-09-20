@@ -38,7 +38,7 @@ import {
   isHostNamespace
 } from './host.js';
 import { createDefaultHostEnvironment } from './host-defaults.js';
-import { RuntimeRecordValue, isRecordValue, type RuntimeValue, type UserFunctionValue, type BoundFunctionValue } from './runtime-values.js';
+import { RuntimeRecordValue, RefValue, isRecordValue, type RuntimeValue, type UserFunctionValue, type BoundFunctionValue } from './runtime-values.js';
 import { parseSource, type ParserOptions } from './parser.js';
 import type { Token } from './tokenizer.js';
 
@@ -111,19 +111,51 @@ class ExecutionContext {
   public getVariable(name: string): RuntimeValue {
     const key = normalizeIdentifier(name);
     if (this.variables.has(key)) {
-      return this.variables.get(key)!;
+      const value = this.variables.get(key)!;
+      // If it's a RefValue, return the actual value it references
+      if (value instanceof RefValue) {
+        return value.get();
+      }
+      return value;
     }
     return defaultValueForIdentifier(name);
   }
 
+  public getVariableRef(name: string): RuntimeValue | undefined {
+    const key = normalizeIdentifier(name);
+    return this.variables.get(key);
+  }
+
   public setVariable(name: string, value: RuntimeValue, token: Token): void {
     const key = normalizeIdentifier(name);
+    const existing = this.variables.get(key);
+
+    // If the existing value is a RefValue, update the referenced value
+    if (existing instanceof RefValue) {
+      existing.set(value);
+      return;
+    }
+
+    // If we're storing a RefValue directly (for REF parameters), store it as-is
+    if (value instanceof RefValue) {
+      this.variables.set(key, value);
+      return;
+    }
+
     const coerced = coerceValueForIdentifier(name, value, token);
     this.variables.set(key, coerced);
   }
 
   public setVariableWithType(name: string, value: RuntimeValue, typeName: string, token: Token): void {
     const key = normalizeIdentifier(name);
+    const existing = this.variables.get(key);
+
+    // If the existing value is a RefValue, update the referenced value
+    if (existing instanceof RefValue) {
+      existing.set(value);
+      return;
+    }
+
     // Don't coerce based on name when we have an explicit type
     // Just store the value as-is (runtime will handle type checking if needed)
     this.variables.set(key, value);
@@ -757,8 +789,92 @@ class Evaluator {
 
   private async evaluateCallExpression(expression: CallExpressionNode): Promise<RuntimeValue> {
     const callee = await this.evaluateExpression(expression.callee);
-    const args = await Promise.all(expression.args.map((arg) => this.evaluateExpression(arg)));
-    return this.invokeCallable(callee, args, expression.closingParen);
+
+    // We need to check if this is a user function to handle REF parameters
+    // Save the scope once here and pass it through to avoid creating multiple copies
+    let args: RuntimeValue[];
+    let savedScope: Map<string, RuntimeValue> | undefined;
+
+    if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'user-function') {
+      const func = callee as UserFunctionValue;
+      savedScope = this.context.saveScope();
+      args = await this.evaluateArgumentsForFunction(func, expression.args, expression.closingParen, 0, savedScope);
+    } else if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'bound-function') {
+      const bound = callee as BoundFunctionValue;
+      savedScope = this.context.saveScope();
+      // For bound functions, the first parameter is the bound object, so we offset by 1
+      args = await this.evaluateArgumentsForFunction(bound.func, expression.args, expression.closingParen, 1, savedScope);
+    } else {
+      // For host functions or unknown callables, evaluate normally
+      args = await Promise.all(expression.args.map((arg) => this.evaluateExpression(arg)));
+    }
+
+    return this.invokeCallable(callee, args, expression.closingParen, savedScope);
+  }
+
+  private async evaluateArgumentsForFunction(
+    func: UserFunctionValue,
+    argExpressions: ExpressionNode[],
+    token: Token,
+    paramOffset: number,
+    savedScope: Map<string, RuntimeValue>
+  ): Promise<RuntimeValue[]> {
+    const args: RuntimeValue[] = [];
+
+    for (let i = 0; i < argExpressions.length; i++) {
+      const param = func.parameters[i + paramOffset];  // Apply offset for UFCS
+      const argExpr = argExpressions[i];
+      if (!argExpr) continue;
+
+      if (param?.isRef) {
+        // For REF parameters, we need to get a reference to the variable
+        if (argExpr.type === 'Identifier') {
+          const varName = argExpr.name;
+          const normalizedName = normalizeIdentifier(varName);
+
+          // Create a RefValue that directly accesses the saved scope Map
+          const ref = new RefValue(
+            varName,
+            () => {
+              const val = savedScope.get(normalizedName);
+              return val !== undefined ? val : defaultValueForIdentifier(varName);
+            },
+            (newValue) => {
+              const coerced = coerceValueForIdentifier(varName, newValue, token);
+              savedScope.set(normalizedName, coerced);
+            }
+          );
+          args.push(ref as any);
+        } else if (argExpr.type === 'MemberExpression') {
+          // Handle record field references
+          const obj = await this.evaluateExpression(argExpr.object);
+          if (!isRecordValue(obj)) {
+            throw new RuntimeError('Cannot pass non-record field as REF parameter', token);
+          }
+          const fieldName = argExpr.property.name;
+          // Create a RefValue that can get/set the field
+          const ref = new RefValue(
+            fieldName,
+            () => {
+              const val = obj.get(fieldName);
+              if (val === undefined) {
+                throw new RuntimeError(`Field '${fieldName}' not found`, argExpr.property.token);
+              }
+              return val;
+            },
+            (newValue) => obj.set(fieldName, newValue)
+          );
+          args.push(ref as any);
+        } else {
+          throw new RuntimeError('REF parameter requires a variable or field reference', token);
+        }
+      } else {
+        // Normal parameter - evaluate the expression
+        args.push(await this.evaluateExpression(argExpr));
+      }
+    }
+
+    return args;
   }
 
   private async evaluateArrayLiteral(expression: ArrayLiteralNode): Promise<RuntimeValue> {
@@ -1185,7 +1301,8 @@ class Evaluator {
   private async invokeCallable(
     callee: RuntimeValue,
     args: RuntimeValue[],
-    token: Token
+    token: Token,
+    savedScope?: Map<string, RuntimeValue>
   ): Promise<RuntimeValue> {
     if (isHostFunction(callee)) {
       try {
@@ -1199,14 +1316,19 @@ class Evaluator {
     if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'bound-function') {
       const bound = callee as BoundFunctionValue;
       // Insert the bound object as the first argument
+      // Note: bound.boundThis is already evaluated, so we just add it
       const fullArgs = [bound.boundThis, ...args];
-      return this.executeUserFunction(bound.func, fullArgs, token);
+      // Use the savedScope if provided, otherwise save the current scope
+      const scope = savedScope ?? this.context.saveScope();
+      return this.executeUserFunction(bound.func, fullArgs, token, scope);
     }
 
     // Check for user-defined functions
     if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'user-function') {
       const func = callee as UserFunctionValue;
-      return this.executeUserFunction(func, args, token);
+      // Use the savedScope if provided, otherwise save the current scope
+      const scope = savedScope ?? this.context.saveScope();
+      return this.executeUserFunction(func, args, token, scope);
     }
 
     throw new RuntimeError('Value is not callable', token);
@@ -1215,10 +1337,10 @@ class Evaluator {
   private async executeUserFunction(
     func: UserFunctionValue,
     args: RuntimeValue[],
-    token: Token
+    token: Token,
+    callerScope: Map<string, RuntimeValue>
   ): Promise<RuntimeValue> {
-    // Create a new scope for function execution
-    const previousScope = this.context.saveScope();
+    // The callerScope was already saved, now we just need to use it
 
     try {
       // Bind parameters to arguments
@@ -1239,11 +1361,17 @@ class Evaluator {
           value = null;
         }
 
-        // Use type-aware setting if parameter has type annotation
-        if (param.typeAnnotation) {
-          this.context.setVariableWithType(param.name.name, value, param.typeAnnotation.name, token);
-        } else {
+        if (param.isRef) {
+          // For REF parameters, store the RefValue directly
+          // The RefValue will handle getting and setting the actual value
           this.context.setVariable(param.name.name, value, token);
+        } else {
+          // Use type-aware setting if parameter has type annotation
+          if (param.typeAnnotation) {
+            this.context.setVariableWithType(param.name.name, value, param.typeAnnotation.name, token);
+          } else {
+            this.context.setVariable(param.name.name, value, token);
+          }
         }
       }
 
@@ -1262,7 +1390,7 @@ class Evaluator {
       return func.isSub ? null : null;
     } finally {
       // Restore previous scope
-      this.context.restoreScope(previousScope);
+      this.context.restoreScope(callerScope);
     }
   }
 
@@ -1334,19 +1462,19 @@ interface RuntimeTypeDefinition {
   readonly fields: Map<string, RuntimeTypeField>;
 }
 
-function normalizeIdentifier(name: string): string {
+export function normalizeIdentifier(name: string): string {
   // Keep case sensitivity for modern BASIC
   return name;
 }
 
-function defaultValueForIdentifier(name: string): RuntimeValue {
+export function defaultValueForIdentifier(name: string): RuntimeValue {
   if (name.endsWith('$')) {
     return '';
   }
   return 0;
 }
 
-function coerceValueForIdentifier(name: string, value: RuntimeValue, token: Token): RuntimeValue {
+export function coerceValueForIdentifier(name: string, value: RuntimeValue, token: Token): RuntimeValue {
   if (name.endsWith('$')) {
     return toStringValue(value);
   }
