@@ -38,7 +38,7 @@ import {
   isHostNamespace
 } from './host.js';
 import { createDefaultHostEnvironment } from './host-defaults.js';
-import { RuntimeRecordValue, isRecordValue, type RuntimeValue, type UserFunctionValue } from './runtime-values.js';
+import { RuntimeRecordValue, isRecordValue, type RuntimeValue, type UserFunctionValue, type BoundFunctionValue } from './runtime-values.js';
 import { parseSource, type ParserOptions } from './parser.js';
 import type { Token } from './tokenizer.js';
 
@@ -728,13 +728,28 @@ class Evaluator {
 
     if (isRecordValue(objectValue)) {
       const fieldName = expression.property.name;
-      if (!objectValue.has(fieldName)) {
-        throw new RuntimeError(
-          `Type '${objectValue.typeName}' has no field '${fieldName}'`,
-          expression.property.token
-        );
+
+      // First, check if it's a field
+      if (objectValue.has(fieldName)) {
+        return objectValue.get(fieldName)!;
       }
-      return objectValue.get(fieldName)!;
+
+      // If not a field, check for UFCS - look for a function with this name
+      const funcValue = this.context.getVariable(fieldName);
+      if (funcValue && typeof funcValue === 'object' && funcValue !== null &&
+          'kind' in funcValue && funcValue.kind === 'user-function') {
+        // Return a bound function that will insert the object as the first argument
+        return {
+          kind: 'bound-function' as const,
+          func: funcValue as UserFunctionValue,
+          boundThis: objectValue
+        };
+      }
+
+      throw new RuntimeError(
+        `Type '${objectValue.typeName}' has no field '${fieldName}'`,
+        expression.property.token
+      );
     }
 
     throw new RuntimeError('Property access is not supported for this value', expression.property.token);
@@ -1178,6 +1193,14 @@ class Evaluator {
       } catch (error) {
         throw this.wrapHostError(error, token);
       }
+    }
+
+    // Check for bound functions (UFCS)
+    if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'bound-function') {
+      const bound = callee as BoundFunctionValue;
+      // Insert the bound object as the first argument
+      const fullArgs = [bound.boundThis, ...args];
+      return this.executeUserFunction(bound.func, fullArgs, token);
     }
 
     // Check for user-defined functions

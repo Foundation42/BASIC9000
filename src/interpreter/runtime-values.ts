@@ -48,11 +48,18 @@ export interface UserFunctionValue {
   readonly isSub?: boolean;
 }
 
+export interface BoundFunctionValue {
+  readonly kind: 'bound-function';
+  readonly func: UserFunctionValue;
+  readonly boundThis: RuntimeValue;
+}
+
 export type RuntimeValue =
   | RuntimeScalar
   | HostNamespaceValue
   | HostFunctionValue
   | UserFunctionValue
+  | BoundFunctionValue
   | RuntimeArray
   | RuntimeRecordValue;
 
