@@ -59,7 +59,7 @@ LET features = [f1, f2, f3]
 
 PRINT "New Features:"
 FOR i = 0 TO ARRAY.LENGTH(features) - 1
-  LET f = ARRAY.GET(features, i)
+  LET f = features[i]
   LET status$ = f.available ? "✓" : "✗"
   PRINT "  " + status$ + " " + f.name + " v" + f.version
 NEXT i
