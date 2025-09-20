@@ -1124,7 +1124,14 @@ class Parser {
 
     while (true) {
       this.skipNewlines();
-      const name = this.parseIdentifier();
+      // Allow keywords as field names in record literals
+      let name: IdentifierNode;
+      if (this.check(TokenType.Keyword)) {
+        const token = this.advance();
+        name = { type: 'Identifier', name: token.lexeme, token };
+      } else {
+        name = this.parseIdentifier();
+      }
       this.consume(TokenType.Colon, 'Expected colon after field name');
       const value = this.parseExpression();
       fields.push({ name, value } satisfies RecordLiteralField);
