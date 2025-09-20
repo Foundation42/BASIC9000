@@ -114,6 +114,13 @@ class ExecutionContext {
     this.variables.set(key, coerced);
   }
 
+  public setVariableWithType(name: string, value: RuntimeValue, typeName: string, token: Token): void {
+    const key = normalizeIdentifier(name);
+    // Don't coerce based on name when we have an explicit type
+    // Just store the value as-is (runtime will handle type checking if needed)
+    this.variables.set(key, value);
+  }
+
   public hasVariable(name: string): boolean {
     const key = normalizeIdentifier(name);
     return this.variables.has(key);
@@ -325,7 +332,12 @@ class Evaluator {
     const value = await this.evaluateExpression(statement.value);
 
     if (statement.target.type === 'Identifier') {
-      this.context.setVariable(statement.target.name, value, statement.token);
+      // If there's a type annotation, use it instead of name-based coercion
+      if (statement.typeAnnotation) {
+        this.context.setVariableWithType(statement.target.name, value, statement.typeAnnotation.name, statement.token);
+      } else {
+        this.context.setVariable(statement.target.name, value, statement.token);
+      }
     } else {
       // MemberExpression - for field assignment
       await this.assignToMember(statement.target, value);
