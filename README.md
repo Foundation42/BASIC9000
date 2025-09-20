@@ -15,9 +15,31 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - **Retro CRT terminal** aesthetic with authentic green phosphor glow
 
 ### Language Features
+
+#### Classic BASIC Foundation
 - 📝 **Core Statements**: LET, PRINT, IF/THEN/ELSE/END IF, FOR/NEXT, WHILE/WEND
 - 🔢 **Classic Math Functions**: SIN, COS, TAN, ATN, SQR, ABS, INT, RND, SGN, EXP, LOG
 - 📐 **String Functions**: MID$, LEFT$, RIGHT$, INSTR, STR$, CHR$, VAL, ASC, LEN, SPACE$, STRING$
+
+#### Modern Type System (NEW!)
+- 🏗️ **TYPE Definitions**: Define structured record types with fields
+- 📦 **Record Literals**: Create instances with `Type { field: value }` syntax
+- 🔍 **Type Annotations**: Optional type declarations with `AS TYPE`
+- ✏️ **Field Modification**: Direct field updates with `record.field = value`
+- 🎯 **UFCS**: Uniform Function Call Syntax for method-like calls
+- 🏠 **PROPERTY**: Computed properties with getter/setter support
+- 🔄 **REF Parameters**: Pass-by-reference for in-place modifications
+- 🎛️ **Default Parameters**: Functions with optional parameters
+- 📤 **Spread Operator**: Expand arrays and SPREAD-annotated records in function calls (`...array` or `array...`)
+
+#### Advanced Control Flow
+- 🛡️ **TRY/CATCH/FINALLY**: Modern error handling with structured exceptions
+- 🎯 **SELECT CASE**: Multi-way branching with multiple case values
+- 🏷️ **WITH Statement**: Simplified field access for records
+- 📤 **FUNCTION/SUB**: User-defined functions and subroutines
+- 🚪 **EXIT SUB/FUNCTION**: Early return from procedures
+
+#### Modern Extensions
 - 🌐 **HTTP Namespace**: GET, POST, STATUS with automatic HTTPS
 - 📊 **JSON Support**: Parse, stringify, and query JSON data
 - 📁 **File System**: Read, write, append, delete files
@@ -68,10 +90,54 @@ Hello from the future!
 READY> LET weather$ = HTTP.GET("wttr.in/London?format=3")
 READY> PRINT weather$
 London: 🌦 +27°C
+```
 
-READY> LET nums = [5, 2, 8, 1]
-READY> PRINT ARRAY.SORT(nums)
-[1, 2, 5, 8]
+### Modern Type System Example
+
+```basic
+' Define a structured type
+TYPE Person
+  name AS STRING
+  age AS NUMBER
+  email AS STRING
+END TYPE
+
+' Create instances with literal syntax
+LET user = Person { name: "Alice", age: 30, email: "alice@example.com" }
+
+' Direct field modification
+user.age = 31
+PRINT user.name + " is " + STR$(user.age) + " years old"
+
+' Define computed properties
+PROPERTY Person.IsAdult(self AS Person) AS BOOL GET
+  RETURN self.age >= 18
+END PROPERTY
+
+IF user.IsAdult THEN
+  PRINT "User can vote!"
+END IF
+
+' Functions with default parameters
+FUNCTION Greet(name AS STRING = "World", excited AS BOOL = FALSE) AS STRING
+  IF excited THEN
+    RETURN "Hello, " + name + "!"
+  ELSE
+    RETURN "Hello, " + name
+  END IF
+END FUNCTION
+
+PRINT Greet()                    ' "Hello, World"
+PRINT Greet("BASIC9000", TRUE)   ' "Hello, BASIC9000!"
+
+' Error handling with TRY/CATCH
+TRY
+  LET result = 10 / 0
+CATCH err
+  PRINT "Error: " + err.message
+FINALLY
+  PRINT "Cleanup complete"
+END TRY
 ```
 
 ## 🎮 Terminal Controls

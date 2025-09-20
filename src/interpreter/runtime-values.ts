@@ -3,8 +3,6 @@ import type { ParameterNode, StatementNode, TypeAnnotationNode } from './ast.js'
 
 export type RuntimeScalar = number | string | boolean | null;
 
-export type RuntimeArray = RuntimeValue[];
-
 export class RuntimeRecordValue {
   public readonly kind = 'record' as const;
   private readonly data: Map<string, RuntimeValue>;
@@ -76,7 +74,7 @@ export type RuntimeValue =
   | HostFunctionValue
   | UserFunctionValue
   | BoundFunctionValue
-  | RuntimeArray
+  | RuntimeValue[]
   | RuntimeRecordValue;
 
 export function isRecordValue(value: RuntimeValue): value is RuntimeRecordValue {

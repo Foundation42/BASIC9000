@@ -3,6 +3,8 @@ import type {
   AssignmentStatementNode,
   AwaitExpressionNode,
   ArrayLiteralNode,
+  ObjectLiteralNode,
+  ObjectLiteralField,
   BooleanLiteralNode,
   BinaryExpressionNode,
   CallExpressionNode,
@@ -17,6 +19,7 @@ import type {
   GotoStatementNode,
   IdentifierNode,
   IfStatementNode,
+  InputStatementNode,
   LetStatementNode,
   LineNode,
   MemberExpressionNode,
@@ -25,6 +28,7 @@ import type {
   NumberLiteralNode,
   ParameterNode,
   SpawnStatementNode,
+  SpreadExpressionNode,
   PrintArgument,
   PrintStatementNode,
   ProgramNode,
@@ -44,7 +48,8 @@ import type {
   WithFieldNode,
   SelectCaseStatementNode,
   CaseClause,
-  PropertyStatementNode
+  PropertyStatementNode,
+  ConditionalExpressionNode
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -126,6 +131,11 @@ class Parser {
     if (this.matchKeyword('PRINT') || this.matchKeyword('?')) {
       const keyword = this.previous();
       return this.parsePrintStatement(keyword);
+    }
+
+    if (this.matchKeyword('INPUT')) {
+      const keyword = this.previous();
+      return this.parseInputStatement(keyword);
     }
 
     if (this.matchKeyword('IF')) {
@@ -278,6 +288,19 @@ class Parser {
 
   private parseTypeDeclaration(keyword: Token): TypeDeclarationNode {
     const name = this.parseIdentifier();
+    let spreadFields: string[] | undefined;
+
+    // Check for SPREAD annotation
+    if (this.matchKeyword('SPREAD')) {
+      this.consume(TokenType.LeftParen, "Expected '(' after SPREAD");
+      spreadFields = [];
+      do {
+        const fieldName = this.parseIdentifier();
+        spreadFields.push(fieldName.name);
+      } while (this.match(TokenType.Comma));
+      this.consume(TokenType.RightParen, "Expected ')' after SPREAD fields");
+    }
+
     const fields: TypeFieldNode[] = [];
     let closed = false;
 
@@ -316,7 +339,7 @@ class Parser {
       throw new ParseError('Unterminated TYPE declaration', keyword);
     }
 
-    return { type: 'TypeDeclaration', token: keyword, name, fields } satisfies TypeDeclarationNode;
+    return { type: 'TypeDeclaration', token: keyword, name, fields, spreadFields } satisfies TypeDeclarationNode;
   }
 
   private parsePrintStatement(keyword: Token): PrintStatementNode {
@@ -352,6 +375,21 @@ class Parser {
     }
 
     return { type: 'PrintStatement', token: keyword, arguments: args, trailing };
+  }
+
+  private parseInputStatement(keyword: Token): InputStatementNode {
+    let prompt: ExpressionNode | undefined;
+
+    // Check if there's a prompt string
+    if (this.check(TokenType.String)) {
+      prompt = this.parseExpression();
+      this.consume(TokenType.Comma, "Expected ',' after INPUT prompt");
+    }
+
+    // Get the variable to store the input
+    const variable = this.parseIdentifier();
+
+    return { type: 'InputStatement', token: keyword, prompt, variable };
   }
 
   private parseIfStatement(keyword: Token): IfStatementNode {
@@ -958,7 +996,28 @@ class Parser {
   }
 
   private parseExpression(): ExpressionNode {
-    return this.parseOr();
+    return this.parseConditional();
+  }
+
+  private parseConditional(): ExpressionNode {
+    let expr = this.parseOr();
+
+    if (this.matchOperator('?')) {
+      const questionToken = this.previous();
+      const whenTrue = this.parseExpression();
+      this.consume(TokenType.Colon, "Expected ':' after true branch in ternary expression");
+      const whenFalse = this.parseExpression();
+
+      expr = {
+        type: 'ConditionalExpression',
+        condition: expr,
+        whenTrue,
+        whenFalse,
+        questionToken
+      } satisfies ConditionalExpressionNode;
+    }
+
+    return expr;
   }
 
   private parseOr(): ExpressionNode {
@@ -1057,6 +1116,11 @@ class Parser {
       const expression = this.parseUnary();
       return { type: 'AwaitExpression', keyword, expression } satisfies AwaitExpressionNode;
     }
+    if (this.match(TokenType.DotDotDot)) {
+      const token = this.previous();
+      const target = this.parsePrimary();
+      return { type: 'SpreadExpression', token, target } satisfies SpreadExpressionNode;
+    }
     return this.parseCallMember();
   }
 
@@ -1069,7 +1133,8 @@ class Parser {
         const args: ExpressionNode[] = [];
         if (!this.check(TokenType.RightParen)) {
           do {
-            args.push(this.parseExpression());
+            const arg = this.parseExpression();
+            args.push(arg);
           } while (this.match(TokenType.Comma));
         }
         const closingParen = this.consume(TokenType.RightParen, 'Expected closing parenthesis after arguments');
@@ -1080,6 +1145,12 @@ class Parser {
       if (this.match(TokenType.Dot)) {
         const property = this.parseMemberProperty();
         expr = { type: 'MemberExpression', object: expr, property } satisfies MemberExpressionNode;
+        continue;
+      }
+
+      if (this.match(TokenType.DotDotDot)) {
+        const token = this.previous();
+        expr = { type: 'SpreadExpression', token, target: expr } satisfies SpreadExpressionNode;
         continue;
       }
 
@@ -1156,6 +1227,21 @@ class Parser {
       }
       this.consume(TokenType.RightBracket, 'Expected closing bracket');
       return { type: 'ArrayLiteral', elements, token } satisfies ArrayLiteralNode;
+    }
+
+    if (this.match(TokenType.LeftBrace)) {
+      const token = this.previous();
+      const fields: ObjectLiteralField[] = [];
+      if (!this.check(TokenType.RightBrace)) {
+        do {
+          const name = this.consume(TokenType.Identifier, 'Expected field name').lexeme;
+          this.consume(TokenType.Colon, 'Expected colon after field name');
+          const value = this.parseExpression();
+          fields.push({ name, value });
+        } while (this.match(TokenType.Comma));
+      }
+      this.consume(TokenType.RightBrace, 'Expected closing brace');
+      return { type: 'ObjectLiteral', fields, token } satisfies ObjectLiteralNode;
     }
 
     throw new ParseError('Expected expression', this.peek());
@@ -1311,6 +1397,8 @@ class Parser {
         return expression.keyword;
       case 'ArrayLiteral':
         return expression.token;
+      case 'ObjectLiteral':
+        return expression.token;
       case 'BooleanLiteral':
         return expression.token;
       case 'NullLiteral':
@@ -1318,6 +1406,10 @@ class Parser {
       case 'RecordLiteral':
         return expression.token;
       case 'WithField':
+        return expression.token;
+      case 'ConditionalExpression':
+        return expression.questionToken;
+      case 'SpreadExpression':
         return expression.token;
       default: {
         const exhaustiveCheck: never = expression;

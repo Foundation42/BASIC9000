@@ -1,5 +1,6 @@
 import type {
   ArrayLiteralNode,
+  ObjectLiteralNode,
   AssignmentStatementNode,
   BinaryExpressionNode,
   CallExpressionNode,
@@ -11,6 +12,7 @@ import type {
   GotoStatementNode,
   IdentifierNode,
   IfStatementNode,
+  InputStatementNode,
   LetStatementNode,
   LineNode,
   MemberExpressionNode,
@@ -30,7 +32,8 @@ import type {
   WithStatementNode,
   WithFieldNode,
   SelectCaseStatementNode,
-  PropertyStatementNode
+  PropertyStatementNode,
+  ConditionalExpressionNode
 } from './ast.js';
 import {
   HostEnvironment,
@@ -47,6 +50,7 @@ export interface ExecutionOptions {
   readonly maxSteps?: number;
   readonly maxCallDepth?: number;
   readonly hostEnvironment?: HostEnvironment;
+  readonly inputHandler?: () => Promise<string>;
 }
 
 export interface ExecutionResult {
@@ -66,7 +70,7 @@ export async function executeProgram(
   program: ProgramNode,
   options: ExecutionOptions = {}
 ): Promise<ExecutionResult> {
-  const context = new ExecutionContext();
+  const context = new ExecutionContext(options);
   const evaluator = new Evaluator(program, context, options);
   await evaluator.run();
   return context.finalize(evaluator.haltReason);
@@ -80,10 +84,12 @@ export async function executeSource(
 }
 
 export class InterpreterSession {
-  private readonly context = new ExecutionContext();
+  private readonly context: ExecutionContext;
   private haltReason: 'END' | 'STOP' | undefined;
 
-  constructor(private readonly options: ExecutionOptions = {}) {}
+  constructor(private readonly options: ExecutionOptions = {}) {
+    this.context = new ExecutionContext(options);
+  }
 
   public async run(source: string, parserOptions: ParserOptions = {}): Promise<ExecutionResult> {
     const program = parseSource(source, parserOptions);
@@ -108,6 +114,8 @@ class ExecutionContext {
   private hasPendingBuffer = false;
   private readonly routines = new Set<string>();
   private readonly types = new Map<string, RuntimeTypeDefinition>();
+
+  constructor(private readonly options: ExecutionOptions = {}) {}
 
   public getVariable(name: string): RuntimeValue {
     const key = normalizeIdentifier(name);
@@ -208,6 +216,20 @@ class ExecutionContext {
     this.hasPendingBuffer = false;
   }
 
+  public async readInput(): Promise<string> {
+    // Flush any pending output before reading input
+    this.flush();
+
+    // Use the input handler if provided, otherwise return empty string
+    if (this.options.inputHandler) {
+      return await this.options.inputHandler();
+    }
+
+    // Default behavior: return empty string
+    // In a real implementation, this would read from stdin or show a prompt
+    return '';
+  }
+
   public finalize(haltReason?: 'END' | 'STOP'): ExecutionResult {
     this.flush();
     const result: ExecutionResult = {
@@ -263,7 +285,12 @@ class ExecutionContext {
       });
     }
 
-    this.types.set(typeName, { name: typeName, fieldOrder, fields: fieldMap });
+    this.types.set(typeName, {
+      name: typeName,
+      fieldOrder,
+      fields: fieldMap,
+      spreadFields: declaration.spreadFields
+    });
   }
 
   public getTypeDefinition(name: string): RuntimeTypeDefinition | undefined {
@@ -350,6 +377,8 @@ class Evaluator {
         return this.executeAssignment(statement);
       case 'PrintStatement':
         return this.executePrint(statement);
+      case 'InputStatement':
+        return this.executeInput(statement);
       case 'IfStatement':
         return this.executeIf(statement, position);
       case 'ForStatement':
@@ -560,6 +589,39 @@ class Evaluator {
     return undefined;
   }
 
+  private async executeInput(statement: InputStatementNode): Promise<StatementSignal | undefined> {
+    // Show prompt if provided
+    if (statement.prompt) {
+      const promptValue = await this.evaluateExpression(statement.prompt);
+      const promptText = runtimeValueToString(promptValue);
+      this.context.writePrint([promptText], 'none');
+    }
+
+    // Get input from the host environment
+    const input = await this.context.readInput();
+
+    // Store the input in the variable
+    const varName = statement.variable.name;
+
+    // Determine the type based on variable name suffix or try to parse as number
+    let value: RuntimeValue;
+    if (varName.endsWith('$')) {
+      // String variable
+      value = input;
+    } else {
+      // Try to parse as number, fall back to string
+      const numValue = parseFloat(input);
+      if (!isNaN(numValue)) {
+        value = numValue;
+      } else {
+        value = input;
+      }
+    }
+
+    this.context.setVariable(varName, value, statement.variable.token);
+    return undefined;
+  }
+
   private async executeIf(
     statement: IfStatementNode,
     position: StatementPosition
@@ -662,6 +724,8 @@ class Evaluator {
         return this.resolveIdentifier(expression);
       case 'ArrayLiteral':
         return this.evaluateArrayLiteral(expression);
+      case 'ObjectLiteral':
+        return this.evaluateObjectLiteral(expression);
       case 'RecordLiteral':
         return this.evaluateRecordLiteral(expression);
       case 'UnaryExpression':
@@ -676,6 +740,10 @@ class Evaluator {
         throw new RuntimeError('AWAIT is not supported in this context', expression.keyword);
       case 'WithField':
         return this.evaluateWithField(expression);
+      case 'ConditionalExpression':
+        return this.evaluateConditional(expression);
+      case 'SpreadExpression':
+        throw new RuntimeError('Spread operator (...) can only be used in function calls', expression.token);
       default: {
         const exhaustiveCheck: never = expression;
         throw exhaustiveCheck;
@@ -734,17 +802,57 @@ class Evaluator {
     const fieldName = expression.field.name;
 
     if (isRecordValue(withObject)) {
+      // First check if it's an actual field
       const value = withObject.get(fieldName);
-      if (value === undefined) {
-        throw new RuntimeError(
-          `Type '${withObject.typeName}' has no field '${fieldName}'`,
-          expression.field.token
+      if (value !== undefined) {
+        return value;
+      }
+
+      // Check for property getter
+      const propertyKey = `${withObject.typeName}.${fieldName}`;
+      const propertyFunc = this.context.getVariable(`__property_${propertyKey}`);
+
+      if (propertyFunc && typeof propertyFunc === 'object' && propertyFunc !== null &&
+          'kind' in propertyFunc && propertyFunc.kind === 'user-function') {
+        // Properties are evaluated immediately with the object as self
+        return await this.executeUserFunction(
+          propertyFunc as UserFunctionValue,
+          [withObject],
+          expression.field.token,
+          this.context.saveScope()
         );
       }
-      return value;
+
+      // If not a field or property, check for UFCS
+      const funcValue = this.context.getVariable(fieldName);
+      if (funcValue && typeof funcValue === 'object' && funcValue !== null &&
+          'kind' in funcValue && funcValue.kind === 'user-function') {
+        // Return a bound function for UFCS
+        return {
+          kind: 'bound-function' as const,
+          func: funcValue as UserFunctionValue,
+          boundThis: withObject
+        };
+      }
+
+      throw new RuntimeError(
+        `Type '${withObject.typeName}' has no field '${fieldName}'`,
+        expression.field.token
+      );
     }
 
     throw new RuntimeError('WITH field access on non-record value', expression.token);
+  }
+
+  private async evaluateConditional(expression: ConditionalExpressionNode): Promise<RuntimeValue> {
+    const condition = await this.evaluateExpression(expression.condition);
+    const isTrue = truthy(condition);
+
+    if (isTrue) {
+      return this.evaluateExpression(expression.whenTrue);
+    } else {
+      return this.evaluateExpression(expression.whenFalse);
+    }
   }
 
   private async evaluateMemberExpression(expression: MemberExpressionNode): Promise<RuntimeValue> {
@@ -823,11 +931,57 @@ class Evaluator {
       // For bound functions, the first parameter is the bound object, so we offset by 1
       args = await this.evaluateArgumentsForFunction(bound.func, expression.args, expression.closingParen, 1, savedScope);
     } else {
-      // For host functions or unknown callables, evaluate normally
-      args = await Promise.all(expression.args.map((arg) => this.evaluateExpression(arg)));
+      // For host functions or unknown callables, evaluate normally with spread support
+      args = await this.evaluateArgumentsWithSpread(expression.args);
     }
 
     return this.invokeCallable(callee, args, expression.closingParen, savedScope);
+  }
+
+  private async evaluateArgumentsWithSpread(argExpressions: ExpressionNode[]): Promise<RuntimeValue[]> {
+    const result: RuntimeValue[] = [];
+
+    for (const arg of argExpressions) {
+      if (arg.type === 'SpreadExpression') {
+        const target = await this.evaluateExpression(arg.target);
+        const spreadValues = this.expandSpreadValue(target, arg.token);
+        result.push(...spreadValues);
+      } else {
+        const value = await this.evaluateExpression(arg);
+        result.push(value);
+      }
+    }
+
+    return result;
+  }
+
+  private expandSpreadValue(value: RuntimeValue, token: Token): RuntimeValue[] {
+    // Handle arrays
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    // Handle records with spread annotation
+    if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'kind' in value && value.kind === 'record') {
+      const record = value as RuntimeRecordValue;
+
+      // Get the type declaration to check for spread fields
+      const typeName = record.typeName;
+      const typeDecl = this.context.getTypeDefinition(typeName);
+      if (typeDecl && typeDecl.spreadFields) {
+        // Return field values in spread order
+        return typeDecl.spreadFields.map(fieldName => {
+          if (!record.has(fieldName)) {
+            throw new RuntimeError(`Missing field '${fieldName}' for spread operation on type '${typeName}'`, token);
+          }
+          return record.get(fieldName)!;
+        });
+      }
+
+      throw new RuntimeError(`Cannot spread record type '${typeName}': missing SPREAD annotation`, token);
+    }
+
+    throw new RuntimeError(`Cannot spread non-array, non-record value`, token);
   }
 
   private async evaluateArgumentsForFunction(
@@ -901,6 +1055,15 @@ class Evaluator {
       elements.push(await this.evaluateExpression(element));
     }
     return elements;
+  }
+
+  private async evaluateObjectLiteral(expression: ObjectLiteralNode): Promise<RuntimeValue> {
+    const fields: [string, RuntimeValue][] = [];
+    for (const field of expression.fields) {
+      const value = await this.evaluateExpression(field.value);
+      fields.push([field.name, value]);
+    }
+    return new RuntimeRecordValue('Object', fields);
   }
 
   private async evaluateUnary(expression: UnaryExpressionNode): Promise<RuntimeValue> {
@@ -1537,6 +1700,7 @@ interface RuntimeTypeDefinition {
   readonly name: string;
   readonly fieldOrder: readonly string[];
   readonly fields: Map<string, RuntimeTypeField>;
+  readonly spreadFields?: readonly string[];
 }
 
 export function normalizeIdentifier(name: string): string {

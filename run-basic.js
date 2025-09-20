@@ -3,6 +3,7 @@ import { parseSource } from './dist/interpreter/parser.js';
 import { executeProgram } from './dist/interpreter/evaluator.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import readline from 'readline';
 
 // Get filename from command line arguments
 const args = process.argv.slice(2);
@@ -37,8 +38,26 @@ async function runBasicProgram(filepath) {
       console.log('=== EXECUTING ===');
     }
 
-    // Execute the program
-    const result = await executeProgram(parsed);
+    // Create readline interface for input
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    // Create input handler
+    const inputHandler = () => {
+      return new Promise((resolve) => {
+        rl.question('', (answer) => {
+          resolve(answer);
+        });
+      });
+    };
+
+    // Execute the program with input handler
+    const result = await executeProgram(parsed, { inputHandler });
+
+    // Close readline interface
+    rl.close();
 
     // Display outputs
     if (result.outputs.length > 0) {

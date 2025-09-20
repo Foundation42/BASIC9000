@@ -32,7 +32,8 @@ export type StatementNode =
   | ExitStatementNode
   | PropertyStatementNode
   | WithStatementNode
-  | SelectCaseStatementNode;
+  | SelectCaseStatementNode
+  | InputStatementNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -67,6 +68,7 @@ export interface TypeDeclarationNode extends BaseStatementNode {
   readonly type: 'TypeDeclaration';
   readonly name: IdentifierNode;
   readonly fields: readonly TypeFieldNode[];
+  readonly spreadFields?: readonly string[]; // Field names for spread operator in order
 }
 
 export interface TypeFieldNode {
@@ -121,6 +123,12 @@ export interface EndStatementNode extends BaseStatementNode {
 export interface SpawnStatementNode extends BaseStatementNode {
   readonly type: 'SpawnStatement';
   readonly routine: ExpressionNode;
+}
+
+export interface InputStatementNode extends BaseStatementNode {
+  readonly type: 'InputStatement';
+  readonly prompt?: ExpressionNode;
+  readonly variable: IdentifierNode;
 }
 
 export interface ExpressionStatementNode extends BaseStatementNode {
@@ -206,13 +214,16 @@ export type ExpressionNode =
   | NullLiteralNode
   | IdentifierNode
   | ArrayLiteralNode
+  | ObjectLiteralNode
   | RecordLiteralNode
   | UnaryExpressionNode
   | BinaryExpressionNode
+  | ConditionalExpressionNode
   | CallExpressionNode
   | MemberExpressionNode
   | AwaitExpressionNode
-  | WithFieldNode;
+  | WithFieldNode
+  | SpreadExpressionNode;
 
 export interface NumberLiteralNode {
   readonly type: 'NumberLiteral';
@@ -243,6 +254,17 @@ export interface ArrayLiteralNode {
   readonly type: 'ArrayLiteral';
   readonly elements: ExpressionNode[];
   readonly token: Token;
+}
+
+export interface ObjectLiteralNode {
+  readonly type: 'ObjectLiteral';
+  readonly fields: readonly ObjectLiteralField[];
+  readonly token: Token;
+}
+
+export interface ObjectLiteralField {
+  readonly name: string;
+  readonly value: ExpressionNode;
 }
 
 export interface RecordLiteralNode {
@@ -281,6 +303,14 @@ export interface BinaryExpressionNode {
   readonly right: ExpressionNode;
 }
 
+export interface ConditionalExpressionNode {
+  readonly type: 'ConditionalExpression';
+  readonly condition: ExpressionNode;
+  readonly whenTrue: ExpressionNode;
+  readonly whenFalse: ExpressionNode;
+  readonly questionToken: Token;
+}
+
 export interface CallExpressionNode {
   readonly type: 'CallExpression';
   readonly callee: ExpressionNode;
@@ -303,6 +333,12 @@ export interface AwaitExpressionNode {
 export interface WithFieldNode {
   readonly type: 'WithField';
   readonly field: IdentifierNode;
+  readonly token: Token;
+}
+
+export interface SpreadExpressionNode {
+  readonly type: 'SpreadExpression';
+  readonly target: ExpressionNode;
   readonly token: Token;
 }
 

@@ -198,7 +198,14 @@ function createMathNamespace() {
       return Math.min(Math.max(value, min), max);
     }),
     DEG2RAD: createFunction('MATH.DEG2RAD', (args) => requireNumberArg('MATH.DEG2RAD', args, 0) * (Math.PI / 180)),
-    RAD2DEG: createFunction('MATH.RAD2DEG', (args) => requireNumberArg('MATH.RAD2DEG', args, 0) * (180 / Math.PI))
+    RAD2DEG: createFunction('MATH.RAD2DEG', (args) => requireNumberArg('MATH.RAD2DEG', args, 0) * (180 / Math.PI)),
+    DISTANCE: createFunction('MATH.DISTANCE', (args) => {
+      const x1 = requireNumberArg('MATH.DISTANCE', args, 0);
+      const y1 = requireNumberArg('MATH.DISTANCE', args, 1);
+      const x2 = requireNumberArg('MATH.DISTANCE', args, 2);
+      const y2 = requireNumberArg('MATH.DISTANCE', args, 3);
+      return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    })
   });
 }
 
@@ -657,9 +664,9 @@ class WebSocketClientHandle {
         resolve(value);
       };
 
-      if (timeoutMs > 0) {
-        this.pendingTimeout = setTimeout(onTimeout, timeoutMs);
-      }
+      // Always set a timeout - use a default of 30 seconds if not specified
+      const effectiveTimeout = timeoutMs > 0 ? timeoutMs : 30000;
+      this.pendingTimeout = setTimeout(onTimeout, effectiveTimeout);
     });
   }
 

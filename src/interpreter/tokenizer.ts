@@ -7,6 +7,7 @@ export enum TokenType {
   Comma = 'COMMA',
   Colon = 'COLON',
   Dot = 'DOT',
+  DotDotDot = 'DOT_DOT_DOT',
   Semicolon = 'SEMICOLON',
   Newline = 'NEWLINE',
   LeftParen = 'LEFT_PAREN',
@@ -108,7 +109,8 @@ const KEYWORDS = new Set<string>([
   'TRUE',
   'FALSE',
   'NULL',
-  'PUBLIC'
+  'PUBLIC',
+  'SPREAD'
 ]);
 
 const SINGLE_CHAR_OPERATORS = new Map<string, TokenType>([
@@ -129,7 +131,7 @@ const SINGLE_CHAR_OPERATORS = new Map<string, TokenType>([
   [',', TokenType.Comma],
   [':', TokenType.Colon],
   [';', TokenType.Semicolon],
-  ['?', TokenType.Keyword]
+  ['?', TokenType.Operator]
 ]);
 
 const MULTI_CHAR_OPERATORS = new Set(['<>', '<=', '>=']);
@@ -214,14 +216,28 @@ export function tokenize(source: string, options: TokenizerOptions = {}): Token[
 
     if (char === '.') {
       const position = { line: cursor.line, column: cursor.column };
-      advance(cursor);
-      tokens.push({
-        type: TokenType.Dot,
-        lexeme: '.',
-        literal: undefined,
-        line: position.line,
-        column: position.column
-      });
+      // Check for spread operator (...)
+      if (peek(cursor) === '.' && peekNext(cursor) === '.') {
+        advance(cursor); // consume first .
+        advance(cursor); // consume second .
+        advance(cursor); // consume third .
+        tokens.push({
+          type: TokenType.DotDotDot,
+          lexeme: '...',
+          literal: undefined,
+          line: position.line,
+          column: position.column
+        });
+      } else {
+        advance(cursor);
+        tokens.push({
+          type: TokenType.Dot,
+          lexeme: '.',
+          literal: undefined,
+          line: position.line,
+          column: position.column
+        });
+      }
       continue;
     }
 
