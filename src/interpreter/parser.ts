@@ -245,7 +245,8 @@ class Parser {
         continue;
       }
 
-      const fieldName = this.parseIdentifier();
+      // Allow keywords as field names in TYPE definitions
+      const fieldName = this.parseFieldName();
       this.consumeKeyword('AS');
       const annotation = this.parseTypeAnnotation();
       fields.push({ name: fieldName, annotation } satisfies TypeFieldNode);
@@ -733,6 +734,15 @@ class Parser {
     }
     const token = this.previous();
     return { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
+  }
+
+  private parseFieldName(): IdentifierNode {
+    // In TYPE fields, allow keywords as field names
+    if (this.match(TokenType.Identifier) || this.match(TokenType.Keyword)) {
+      const token = this.previous();
+      return { type: 'Identifier', name: token.lexeme, token } satisfies IdentifierNode;
+    }
+    throw new ParseError('Expected field name', this.peek());
   }
 
   private parseTypeAnnotation(): TypeAnnotationNode {
