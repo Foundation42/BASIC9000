@@ -5,8 +5,8 @@ const KEYWORDS = [
   'LET', 'PRINT', 'IF', 'THEN', 'ELSE', 'END', 'FOR', 'TO', 'NEXT', 'WHILE', 'WEND',
   'DO', 'LOOP', 'RETURN', 'REM', 'DIM', 'FUNCTION', 'SUB',
   // Modern control flow
-  'SELECT', 'CASE', 'SPAWN', 'ROUTINE', 'WITH', 'TRY', 'CATCH', 'FINALLY', 'THROW',
-  'EXIT', 'CALL', 'ASYNC', 'AWAIT',
+  'SELECT', 'CASE', 'SPAWN', 'ROUTINE', 'WITH', 'TRY', 'CATCH', 'FINALLY', 'DEFER', 'THROW',
+  'EXIT', 'CONTINUE', 'CALL', 'ASYNC', 'AWAIT',
   // Type system
   'TYPE', 'AS', 'PROPERTY', 'REF', 'SPREAD', 'CONST', 'NEW',
   // Data types and literals

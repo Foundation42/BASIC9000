@@ -49,7 +49,10 @@ import type {
   SelectCaseStatementNode,
   CaseClause,
   PropertyStatementNode,
-  ConditionalExpressionNode
+  ConditionalExpressionNode,
+  DeferStatementNode,
+  DeferBlockStatementNode,
+  ContinueStatementNode
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -184,6 +187,11 @@ class Parser {
       return this.parseExitStatement(keyword);
     }
 
+    if (this.matchKeyword('CONTINUE')) {
+      const keyword = this.previous();
+      return this.parseContinueStatement(keyword);
+    }
+
     if (this.matchKeyword('WITH')) {
       const keyword = this.previous();
       return this.parseWithStatement(keyword);
@@ -212,6 +220,11 @@ class Parser {
     if (this.matchKeyword('TRY')) {
       const keyword = this.previous();
       return this.parseTryCatchStatement(keyword);
+    }
+
+    if (this.matchKeyword('DEFER')) {
+      const keyword = this.previous();
+      return this.parseDeferStatement(keyword);
     }
 
     if (this.matchKeyword('ERROR')) {
@@ -599,6 +612,55 @@ class Parser {
     } satisfies TryCatchStatementNode;
   }
 
+  private parseDeferStatement(keyword: Token): DeferStatementNode | DeferBlockStatementNode {
+    // Check if this is the block form: DEFER followed by newline
+    if (this.check(TokenType.Newline) || this.check(TokenType.EOF)) {
+      // Block form: DEFER ... END DEFER
+      const block: StatementNode[] = [];
+
+      // Skip newlines after DEFER
+      while (this.match(TokenType.Newline)) {
+        // consume newlines
+      }
+
+      // Parse statements until END DEFER
+      while (!this.isAtEnd()) {
+        if (this.isKeyword('END') && this.peekNextKeyword('DEFER')) {
+          break;
+        }
+
+        if (this.match(TokenType.Newline)) {
+          continue;
+        }
+
+        block.push(this.parseStatement());
+      }
+
+      // Expect END DEFER
+      if (!this.matchKeyword('END')) {
+        throw new ParseError('Expected END DEFER', this.peek());
+      }
+      if (!this.matchKeyword('DEFER')) {
+        throw new ParseError('Expected DEFER after END', this.peek());
+      }
+
+      return {
+        type: 'DeferBlockStatement',
+        token: keyword,
+        block
+      } satisfies DeferBlockStatementNode;
+    } else {
+      // Single statement form: DEFER <statement>
+      const statement = this.parseStatement();
+
+      return {
+        type: 'DeferStatement',
+        token: keyword,
+        statement
+      } satisfies DeferStatementNode;
+    }
+  }
+
   private parseErrorStatement(keyword: Token): ErrorStatementNode {
     const message = this.parseExpression();
     return { type: 'ErrorStatement', token: keyword, message } satisfies ErrorStatementNode;
@@ -780,13 +842,15 @@ class Parser {
   }
 
   private parseExitStatement(keyword: Token): ExitStatementNode {
-    let exitType: 'SUB' | 'FUNCTION';
+    let exitType: 'SUB' | 'FUNCTION' | 'FOR';
     if (this.matchKeyword('SUB')) {
       exitType = 'SUB';
     } else if (this.matchKeyword('FUNCTION')) {
       exitType = 'FUNCTION';
+    } else if (this.matchKeyword('FOR')) {
+      exitType = 'FOR';
     } else {
-      throw new ParseError('Expected SUB or FUNCTION after EXIT', this.peek());
+      throw new ParseError('Expected SUB, FUNCTION, or FOR after EXIT', this.peek());
     }
 
     return {
@@ -794,6 +858,13 @@ class Parser {
       token: keyword,
       exitType
     } satisfies ExitStatementNode;
+  }
+
+  private parseContinueStatement(keyword: Token): ContinueStatementNode {
+    return {
+      type: 'ContinueStatement',
+      token: keyword
+    } satisfies ContinueStatementNode;
   }
 
   private parseWithStatement(keyword: Token): WithStatementNode {

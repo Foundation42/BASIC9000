@@ -28,10 +28,13 @@ export type StatementNode =
   | FunctionStatementNode
   | SubStatementNode
   | ExitStatementNode
+  | ContinueStatementNode
   | PropertyStatementNode
   | WithStatementNode
   | SelectCaseStatementNode
-  | InputStatementNode;
+  | InputStatementNode
+  | DeferStatementNode
+  | DeferBlockStatementNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -165,7 +168,11 @@ export interface ParameterNode {
 
 export interface ExitStatementNode extends BaseStatementNode {
   readonly type: 'ExitStatement';
-  readonly exitType: 'SUB' | 'FUNCTION';
+  readonly exitType: 'SUB' | 'FUNCTION' | 'FOR';
+}
+
+export interface ContinueStatementNode extends BaseStatementNode {
+  readonly type: 'ContinueStatement';
 }
 
 export interface PropertyStatementNode extends BaseStatementNode {
@@ -344,6 +351,16 @@ export interface NewExpressionNode {
   readonly typeName: IdentifierNode;
   readonly args: ExpressionNode[];
   readonly token: Token;
+}
+
+export interface DeferStatementNode extends BaseStatementNode {
+  readonly type: 'DeferStatement';
+  readonly statement: StatementNode;
+}
+
+export interface DeferBlockStatementNode extends BaseStatementNode {
+  readonly type: 'DeferBlockStatement';
+  readonly block: StatementNode[];
 }
 
 export type AnyNode = ProgramNode | LineNode | StatementNode | ExpressionNode;

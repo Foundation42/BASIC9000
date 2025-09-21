@@ -39,6 +39,7 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - 🏷️ **WITH Statement**: Simplified field access for records
 - 📤 **FUNCTION/SUB**: User-defined functions and subroutines
 - 🚪 **EXIT SUB/FUNCTION**: Early return from procedures
+- 🧹 **DEFER Statement**: Go-style scope-exit cleanup with guaranteed execution on all exit paths
 
 #### Modern Extensions
 - 🌐 **HTTP Namespace**: GET, POST, STATUS with automatic HTTPS
@@ -383,6 +384,37 @@ WHILE TRUE
       END
   END SELECT
 WEND
+```
+
+### DEFER Cleanup
+```basic
+SUB ProcessFile(filename$)
+  LET handle = FileOpen(filename$)
+
+  ' Guarantee file is closed even if error occurs
+  DEFER FileClose(handle)
+  DEFER PRINT "File processing complete: " + filename$
+
+  ' Process file - DEFER ensures cleanup on any exit path
+  LET data$ = FileRead(handle)
+
+  IF INSTR(data$, "error") > 0 THEN
+    ERROR "Invalid file format"  ' DEFER still executes
+  END IF
+
+  ' Normal processing continues...
+  PRINT "Processing: " + data$
+END SUB
+
+' DEFER also works with multiple cleanup actions (LIFO order)
+SUB TransactionExample()
+  DEFER PRINT "3. Transaction complete"
+  DEFER PRINT "2. Commit changes"
+  DEFER PRINT "1. Release lock"
+
+  PRINT "Starting transaction..."
+  RETURN  ' All DEFERs execute in reverse order
+END SUB
 ```
 
 ### Canvas Graphics
