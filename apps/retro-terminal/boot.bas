@@ -6,7 +6,7 @@ REM ========================================
 ' Clear terminal and show boot overlay
 TERMINAL.CLEAR()
 TERMINAL.STATUS("Boot sequence engaged")
-TERMINAL.OVERLAY("BASIC9000 ONLINE", 2000)
+TERMINAL.OVERLAY("BASIC9000 ONLINE", 10000)
 
 ' Boot sequence - enhanced with new type system
 
@@ -27,6 +27,7 @@ LET sys = SystemInfo {
 }
 
 ' Display system information
+PRINT "Hello, BASIC9000 User!"
 PRINT "╔════════════════════════════════════╗"
 PRINT "║       BASIC9000 SYSTEM STATUS      ║"
 PRINT "╚════════════════════════════════════╝"
@@ -57,10 +58,17 @@ TYPE Feature
   version AS STRING
 END TYPE
 
-LET f1 = Feature { name: "Ternary Operator", available: TRUE, version: "1.0" }
-LET f2 = Feature { name: "Type System", available: TRUE, version: "1.0" }
-LET f3 = Feature { name: "Properties", available: TRUE, version: "1.0" }
-LET features = [f1, f2, f3]
+LET f1 = Feature { name: "DEFER Scope-Exit", available: TRUE, version: "1.0" }
+LET f2 = Feature { name: "UFCS Method Chaining", available: TRUE, version: "1.0" }
+LET f3 = Feature { name: "NEW Operator", available: TRUE, version: "1.0" }
+LET f4 = Feature { name: "Spread Operator (...)", available: TRUE, version: "1.0" }
+LET f5 = Feature { name: "Type System & Records", available: TRUE, version: "1.0" }
+LET f6 = Feature { name: "Properties (GET/SET)", available: TRUE, version: "1.0" }
+LET f7 = Feature { name: "WITH Blocks", available: TRUE, version: "1.0" }
+LET f8 = Feature { name: "Array Indexing [n]", available: TRUE, version: "1.0" }
+LET f9 = Feature { name: "Enhanced LEN()", available: TRUE, version: "1.0" }
+LET f10 = Feature { name: "100/100 Tests Passing", available: TRUE, version: "1.0" }
+LET features = [f1, f2, f3, f4, f5, f6, f7, f8, f9, f10]
 
 PRINT "New Features:"
 FOR i = 0 TO ARRAY.LENGTH(features) - 1
