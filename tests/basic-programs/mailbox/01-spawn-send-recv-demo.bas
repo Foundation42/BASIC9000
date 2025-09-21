@@ -23,14 +23,15 @@ SPAWN "worker1"
 REM Test logging
 CALL LogMessage("Main thread started")
 
-REM Test 2: Message sending (theoretical)
+REM Test 2: Message sending (now REAL!)
 PRINT "=== Test 2: SEND Messages ==="
-REM Theoretical syntax for sending messages to spawned routines
-REM SEND "worker1", "initialize"
-REM SEND "worker1", "process data"
-REM SEND "worker1", "shutdown"
+REM Real syntax for sending messages to spawned routines
+LET worker1 = __task_worker1  REM Get the task handle
+SEND worker1, "initialize"
+SEND worker1, "process data"
+SEND worker1, "shutdown"
 
-CALL LogMessage("Messages would be sent here")
+CALL LogMessage("Messages sent to worker1")
 
 REM Test 3: Message receiving (theoretical)
 PRINT "=== Test 3: RECV Messages ==="

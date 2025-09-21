@@ -74,6 +74,50 @@ export class RefValue {
   }
 }
 
+export class TaskValue {
+  public readonly kind = 'task' as const;
+  public readonly mailbox: RuntimeValue[] = [];
+  public status: 'running' | 'waiting' | 'completed' | 'error' = 'running';
+  public result: RuntimeValue | undefined;
+  public error: string | undefined;
+
+  constructor(
+    public readonly id: string,
+    public readonly name: string,
+    public readonly fiber: () => Promise<RuntimeValue>
+  ) {}
+
+  public send(message: RuntimeValue): void {
+    this.mailbox.push(message);
+  }
+
+  public receive(timeout?: number): Promise<RuntimeValue | null> {
+    if (this.mailbox.length > 0) {
+      return Promise.resolve(this.mailbox.shift() || null);
+    }
+
+    if (timeout === 0) {
+      return Promise.resolve(null);
+    }
+
+    return new Promise((resolve) => {
+      const checkMessages = () => {
+        if (this.mailbox.length > 0) {
+          resolve(this.mailbox.shift() || null);
+          return;
+        }
+        setTimeout(checkMessages, 10);
+      };
+
+      if (timeout && timeout > 0) {
+        setTimeout(() => resolve(null), timeout);
+      }
+
+      checkMessages();
+    });
+  }
+}
+
 export type RuntimeValue =
   | RuntimeScalar
   | HostNamespaceValue
@@ -82,8 +126,13 @@ export type RuntimeValue =
   | BoundFunctionValue
   | BoundHostFunctionValue
   | RuntimeValue[]
-  | RuntimeRecordValue;
+  | RuntimeRecordValue
+  | TaskValue;
 
 export function isRecordValue(value: RuntimeValue): value is RuntimeRecordValue {
   return value instanceof RuntimeRecordValue;
+}
+
+export function isTaskValue(value: RuntimeValue): value is TaskValue {
+  return value instanceof TaskValue;
 }

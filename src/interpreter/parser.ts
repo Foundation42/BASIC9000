@@ -26,7 +26,6 @@ import type {
   NullLiteralNode,
   NumberLiteralNode,
   ParameterNode,
-  SpawnStatementNode,
   SpreadExpressionNode,
   NewExpressionNode,
   PrintArgument,
@@ -52,7 +51,10 @@ import type {
   ConditionalExpressionNode,
   DeferStatementNode,
   DeferBlockStatementNode,
-  ContinueStatementNode
+  ContinueStatementNode,
+  SendStatementNode,
+  RecvExpressionNode,
+  SpawnExpressionNode
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -202,9 +204,9 @@ class Parser {
       return this.parseSelectCaseStatement(keyword);
     }
 
-    if (this.matchKeyword('SPAWN')) {
+    if (this.matchKeyword('SEND')) {
       const keyword = this.previous();
-      return this.parseSpawnStatement(keyword);
+      return this.parseSendStatement(keyword);
     }
 
     if (this.matchKeyword('STOP')) {
@@ -516,9 +518,30 @@ class Parser {
     return target;
   }
 
-  private parseSpawnStatement(keyword: Token): SpawnStatementNode {
+  private parseSpawnExpression(token: Token): SpawnExpressionNode {
     const routine = this.parseExpression();
-    return { type: 'SpawnStatement', token: keyword, routine } satisfies SpawnStatementNode;
+    return { type: 'SpawnExpression', token, routine } satisfies SpawnExpressionNode;
+  }
+
+  private parseSendStatement(keyword: Token): SendStatementNode {
+    const target = this.parseExpression();
+    this.consume(TokenType.Comma, 'Expected comma after SEND target');
+    const message = this.parseExpression();
+    return { type: 'SendStatement', token: keyword, target, message } satisfies SendStatementNode;
+  }
+
+  private parseRecvExpression(token: Token): RecvExpressionNode {
+    let timeout: ExpressionNode | undefined;
+
+    // Check for optional timeout parameter: RECV(timeout)
+    if (this.match(TokenType.LeftParen)) {
+      if (!this.check(TokenType.RightParen)) {
+        timeout = this.parseExpression();
+      }
+      this.consume(TokenType.RightParen, 'Expected ) after RECV timeout');
+    }
+
+    return { type: 'RecvExpression', token, timeout } satisfies RecvExpressionNode;
   }
 
   private parseTryCatchStatement(keyword: Token): TryCatchStatementNode {
@@ -1277,6 +1300,14 @@ class Parser {
       const token = this.previous();
       return { type: 'NullLiteral', token } satisfies NullLiteralNode;
     }
+    if (this.matchKeyword('RECV') || this.matchKeyword('RECEIVE')) {
+      const token = this.previous();
+      return this.parseRecvExpression(token);
+    }
+    if (this.matchKeyword('SPAWN')) {
+      const token = this.previous();
+      return this.parseSpawnExpression(token);
+    }
 
     if (this.match(TokenType.Number)) {
       const token = this.previous();
@@ -1509,6 +1540,10 @@ class Parser {
       case 'SpreadExpression':
         return expression.token;
       case 'NewExpression':
+        return expression.token;
+      case 'RecvExpression':
+        return expression.token;
+      case 'SpawnExpression':
         return expression.token;
       default: {
         const exhaustiveCheck: never = expression;

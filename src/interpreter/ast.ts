@@ -20,7 +20,6 @@ export type StatementNode =
   | NextStatementNode
   | ReturnStatementNode
   | StopStatementNode
-  | SpawnStatementNode
   | EndStatementNode
   | ExpressionStatementNode
   | TryCatchStatementNode
@@ -34,7 +33,8 @@ export type StatementNode =
   | SelectCaseStatementNode
   | InputStatementNode
   | DeferStatementNode
-  | DeferBlockStatementNode;
+  | DeferBlockStatementNode
+  | SendStatementNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -112,8 +112,9 @@ export interface EndStatementNode extends BaseStatementNode {
   readonly type: 'EndStatement';
 }
 
-export interface SpawnStatementNode extends BaseStatementNode {
-  readonly type: 'SpawnStatement';
+export interface SpawnExpressionNode {
+  readonly type: 'SpawnExpression';
+  readonly token: Token;
   readonly routine: ExpressionNode;
 }
 
@@ -219,6 +220,8 @@ export type ExpressionNode =
   | MemberExpressionNode
   | IndexExpressionNode
   | AwaitExpressionNode
+  | RecvExpressionNode
+  | SpawnExpressionNode
   | WithFieldNode
   | SpreadExpressionNode
   | NewExpressionNode;
@@ -361,6 +364,18 @@ export interface DeferStatementNode extends BaseStatementNode {
 export interface DeferBlockStatementNode extends BaseStatementNode {
   readonly type: 'DeferBlockStatement';
   readonly block: StatementNode[];
+}
+
+export interface SendStatementNode extends BaseStatementNode {
+  readonly type: 'SendStatement';
+  readonly target: ExpressionNode; // Task to send to
+  readonly message: ExpressionNode; // Message to send
+}
+
+export interface RecvExpressionNode {
+  readonly type: 'RecvExpression';
+  readonly token: Token;
+  readonly timeout?: ExpressionNode; // Optional timeout in milliseconds
 }
 
 export type AnyNode = ProgramNode | LineNode | StatementNode | ExpressionNode;

@@ -20,7 +20,7 @@ import type {
   ProgramNode,
   RecordLiteralNode,
   ReturnStatementNode,
-  SpawnStatementNode,
+  SpawnExpressionNode,
   StatementNode,
   SubStatementNode,
   TryCatchStatementNode,
@@ -37,7 +37,9 @@ import type {
   DeferStatementNode,
   DeferBlockStatementNode,
   ContinueStatementNode,
-  ParameterNode
+  ParameterNode,
+  SendStatementNode,
+  RecvExpressionNode
 } from './ast.js';
 import {
   HostEnvironment,
@@ -46,7 +48,7 @@ import {
   isHostNamespace
 } from './host.js';
 import { createDefaultHostEnvironment } from './host-defaults.js';
-import { RuntimeRecordValue, RefValue, isRecordValue, type RuntimeValue, type UserFunctionValue, type BoundFunctionValue } from './runtime-values.js';
+import { RuntimeRecordValue, RefValue, TaskValue, isRecordValue, isTaskValue, type RuntimeValue, type UserFunctionValue, type BoundFunctionValue } from './runtime-values.js';
 import { parseSource, type ParserOptions } from './parser.js';
 import type { Token } from './tokenizer.js';
 
@@ -125,6 +127,9 @@ class ExecutionContext {
   private hasPendingBuffer = false;
   private readonly routines = new Set<string>();
   private readonly types = new Map<string, RuntimeTypeDefinition>();
+  private readonly tasks = new Map<string, TaskValue>(); // Task ID -> TaskValue
+  private taskIdCounter = 0;
+  private currentTask: TaskValue | null = null; // Current executing task for RECV
   public deferStack: Array<{ type: 'statement', statement: StatementNode } | { type: 'block', statements: StatementNode[] }> = [];
 
   constructor(private readonly options: ExecutionOptions = {}) {}
@@ -371,6 +376,9 @@ class ExecutionContext {
     this.hasPendingBuffer = false;
     this.routines.clear();
     this.types.clear();
+    this.tasks.clear();
+    this.taskIdCounter = 0;
+    this.currentTask = null;
   }
 
   public spawnRoutine(name: string): boolean {
@@ -380,6 +388,35 @@ class ExecutionContext {
     }
     this.routines.add(key);
     return true;
+  }
+
+  public spawnTask(name: string, fiber: () => Promise<RuntimeValue>): TaskValue {
+    const taskId = `task_${++this.taskIdCounter}`;
+    const task = new TaskValue(taskId, name, fiber);
+    this.tasks.set(taskId, task);
+
+    // Start the fiber execution
+    task.fiber().then(result => {
+      task.status = 'completed';
+      task.result = result;
+    }).catch(error => {
+      task.status = 'error';
+      task.error = error instanceof Error ? error.message : String(error);
+    });
+
+    return task;
+  }
+
+  public getTask(taskId: string): TaskValue | undefined {
+    return this.tasks.get(taskId);
+  }
+
+  public setCurrentTask(task: TaskValue | null): void {
+    this.currentTask = task;
+  }
+
+  public getCurrentTask(): TaskValue | null {
+    return this.currentTask;
   }
 
   public defineType(declaration: TypeDeclarationNode): void {
@@ -526,8 +563,8 @@ class Evaluator {
         return { type: 'halt', reason: 'STOP' };
       case 'EndStatement':
         return { type: 'halt', reason: 'END' };
-      case 'SpawnStatement':
-        return this.executeSpawn(statement);
+      case 'SendStatement':
+        return this.executeSend(statement);
       case 'ExpressionStatement':
         await this.evaluateExpression(statement.expression);
         return undefined;
@@ -600,15 +637,58 @@ class Evaluator {
     return undefined;
   }
 
-  private async executeSpawn(statement: SpawnStatementNode): Promise<StatementSignal | undefined> {
-    const rawName = await this.evaluateExpression(statement.routine);
+  private async evaluateSpawn(expression: SpawnExpressionNode): Promise<RuntimeValue> {
+    // SPAWN now returns the task handle directly - ELEGANT!
+    const rawName = await this.evaluateExpression(expression.routine);
     const name = toStringValue(rawName) || 'ROUTINE';
-    const added = this.context.spawnRoutine(name);
-    const message = added
-      ? `Routine ${name} spawned successfully`
-      : `Routine ${name} already running`;
+
+    // Create a task fiber that simulates the routine execution
+    const fiber = async (): Promise<RuntimeValue> => {
+      // In the current implementation, we'll simulate a basic task
+      // Later this should execute the actual routine/function
+      return `Task ${name} completed`;
+    };
+
+    const task = this.context.spawnTask(name, fiber);
+
+    // For backward compatibility, also add to routines
+    this.context.spawnRoutine(name);
+
+    const message = `Task ${name} spawned with ID ${task.id}`;
     this.context.writePrint([message], 'newline');
+
+    // Return the task handle directly - BEAUTIFUL!
+    return task;
+  }
+
+  private async executeSend(statement: SendStatementNode): Promise<StatementSignal | undefined> {
+    const target = await this.evaluateExpression(statement.target);
+    const message = await this.evaluateExpression(statement.message);
+
+    if (!isTaskValue(target)) {
+      throw new RuntimeError(`SEND target must be a Task, got ${typeof target}`, statement.token);
+    }
+
+    target.send(message);
+
+    // Log the send operation for debugging
+    this.context.writePrint([`Message sent to task ${target.id}: ${toStringValue(message)}`], 'newline');
+
     return undefined;
+  }
+
+  private async evaluateRecv(expression: RecvExpressionNode): Promise<RuntimeValue> {
+    const currentTask = this.context.getCurrentTask();
+    if (!currentTask) {
+      throw new RuntimeError('RECV can only be called from within a task', expression.token);
+    }
+
+    const timeout = expression.timeout
+      ? toNumber(await this.evaluateExpression(expression.timeout), expression.token)
+      : undefined;
+
+    const message = await currentTask.receive(timeout);
+    return message ?? null;
   }
 
   private async executeTryCatch(
@@ -964,6 +1044,10 @@ class Evaluator {
         return this.evaluateIndexExpression(expression);
       case 'AwaitExpression':
         throw new RuntimeError('AWAIT is not supported in this context', expression.keyword);
+      case 'RecvExpression':
+        return this.evaluateRecv(expression);
+      case 'SpawnExpression':
+        return this.evaluateSpawn(expression);
       case 'WithField':
         return this.evaluateWithField(expression);
       case 'ConditionalExpression':
@@ -2093,6 +2177,10 @@ class Evaluator {
         return this.getExpressionToken(expression.object);
       case 'AwaitExpression':
         return expression.keyword;
+      case 'RecvExpression':
+        return expression.token;
+      case 'SpawnExpression':
+        return expression.token;
       case 'ArrayLiteral':
         return expression.token;
       case 'ObjectLiteral':
