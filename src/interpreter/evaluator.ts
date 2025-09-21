@@ -1355,21 +1355,18 @@ class Evaluator {
       };
     }
 
-    // Check for host namespace functions (like CANVAS.COLOR)
-    // Try to find a namespace that might have this function
-    const hostEnvironments = ['CANVAS', 'MATH', 'STRING', 'ARRAY']; // Common namespaces
-    for (const nsName of hostEnvironments) {
-      const namespace = this.hostEnvironment.get(nsName);
-      if (namespace && isHostNamespace(namespace)) {
-        const member = namespace.getMember(memberName);
-        if (member && typeof member === 'object' && member !== null && 'kind' in member && member.kind === 'host-function') {
-          // Return a bound function that will insert the object as the first argument
-          return {
-            kind: 'bound-host-function' as const,
-            func: member as any,
-            boundThis: objectValue
-          };
-        }
+    // Check for host namespace functions dynamically
+    // Try to find any registered namespace that might have this function
+    const namespaces = this.hostEnvironment.getAllNamespaces();
+    for (const namespace of namespaces) {
+      const member = namespace.getMember(memberName);
+      if (member && typeof member === 'object' && member !== null && 'kind' in member && member.kind === 'host-function') {
+        // Return a bound function that will insert the object as the first argument
+        return {
+          kind: 'bound-host-function' as const,
+          func: member as any,
+          boundThis: objectValue
+        };
       }
     }
 

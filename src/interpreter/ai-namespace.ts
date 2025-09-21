@@ -1,18 +1,30 @@
 import { createFunction, createNamespace } from './host.js';
-import type { HostNamespaceValue } from './host.js';
 import { requireStringArg, requireNumberArg } from './host-defaults.js';
 
 // Store for API keys
 const apiKeys = new Map<string, string>();
 
-// Store for AI instances
-const aiInstances = new Map<string, AIInstance>();
+// Store for AI instances using numeric handles (like Canvas)
+const aiInstances = new Map<number, AIInstance>();
 let nextInstanceId = 1;
 
-// Default configuration
+// Use the centralized config system
+function getConfigValue(key: string, fallback?: string): string | undefined {
+  // Check environment variables (set by config-namespace auto-loading)
+  const envKey = key.toUpperCase().replace(/[-\s.]/g, '_');
+  if (process.env[envKey]) return process.env[envKey];
+
+  // Check common variations
+  if (process.env[key]) return process.env[key];
+  if (process.env[key.toLowerCase()]) return process.env[key.toLowerCase()];
+
+  return fallback;
+}
+
+// Default configuration with auto-detection
 const defaultConfig = {
-  provider: 'openai',
-  model: 'gpt-3.5-turbo',
+  provider: getConfigValue('ai.provider', getConfigValue('AI_PROVIDER', 'openai'))!,
+  model: getConfigValue('ai.model', getConfigValue('AI_MODEL', 'gpt-3.5-turbo'))!,
   temperature: 0.7,
   maxTokens: 1000,
   timeout: 30000,
@@ -37,8 +49,7 @@ interface Message {
 }
 
 class AIInstance {
-  public readonly id: string;
-  public readonly value: HostNamespaceValue;
+  public readonly id: number;
   public config: AIConfig;
   private messages: Message[] = [];
   private totalTokens = 0;
@@ -47,7 +58,7 @@ class AIInstance {
   private lastErrorCode?: number;
 
   constructor(provider: string, model: string) {
-    this.id = `ai_${nextInstanceId++}`;
+    this.id = nextInstanceId++;
     this.config = {
       provider,
       model,
@@ -64,13 +75,6 @@ class AIInstance {
       // Endpoint must be set explicitly for generic providers
       this.config.endpoint = '';
     }
-
-    // Create the instance namespace
-    this.value = createNamespace(`AI.${this.id}`, {
-      ID: this.id,
-      PROVIDER: provider,
-      MODEL: model
-    });
 
     aiInstances.set(this.id, this);
   }
@@ -146,10 +150,13 @@ class AIInstance {
 
   private async callOpenAIAPI(messages: Message[], maxTokens?: number): Promise<string> {
     const apiKey = apiKeys.get('openai') ||
+                  getConfigValue('openai_api_key') ||
                   process.env.OPENAI_API_KEY ||
                   process.env.OPENAI_KEY ||
                   process.env.openai_api_key ||
                   process.env.openai_key;
+
+
     if (!apiKey && this.config.provider === 'openai') {
       throw new Error('OpenAI API key not configured. Use AI.KEY("openai", "your_key") or set OPENAI_API_KEY environment variable');
     }
@@ -197,6 +204,7 @@ class AIInstance {
 
   private async callAnthropicAPI(messages: Message[], maxTokens?: number): Promise<string> {
     const apiKey = apiKeys.get('anthropic') ||
+                  getConfigValue('anthropic_api_key') ||
                   process.env.ANTHROPIC_API_KEY ||
                   process.env.ANTHROPIC_KEY ||
                   process.env.anthropic_api_key ||
@@ -283,12 +291,37 @@ class AIInstance {
   }
 }
 
+// Helper function to find an AI instance from a handle
+function findInstance(handle: any): AIInstance {
+  const id = typeof handle === 'number' ? handle : parseInt(String(handle));
+  const instance = aiInstances.get(id);
+  if (!instance) {
+    throw new Error(`Invalid AI handle: ${handle}`);
+  }
+  return instance;
+}
+
 export function createAINamespace() {
   return createNamespace('AI', {
-    // Instance creation
+    // Instance creation with auto-detection (returns numeric handle like Canvas)
     NEW: createFunction('AI.NEW', (args) => {
-      const provider = requireStringArg('AI.NEW', args, 0).toLowerCase();
-      const model = requireStringArg('AI.NEW', args, 1);
+      let provider: string;
+      let model: string;
+
+      if (args.length === 0) {
+        // Auto-detect both from config/environment
+        provider = defaultConfig.provider;
+        model = defaultConfig.model;
+      } else if (args.length === 1) {
+        // Auto-detect model from config/environment for given provider
+        provider = requireStringArg('AI.NEW', args, 0).toLowerCase();
+        const providerModel = getConfigValue(`ai.${provider}.model`, getConfigValue(`AI_${provider.toUpperCase()}_MODEL`));
+        model = providerModel || defaultConfig.model;
+      } else {
+        // Both provider and model specified
+        provider = requireStringArg('AI.NEW', args, 0).toLowerCase();
+        model = requireStringArg('AI.NEW', args, 1);
+      }
 
       // Support "generic" as an alias for "openai-compatible"
       const normalizedProvider = provider === 'generic' ? 'openai-compatible' : provider;
@@ -301,7 +334,7 @@ export function createAINamespace() {
         instance.setEndpoint(endpoint);
       }
 
-      return instance.value;
+      return instance.id; // Return numeric handle
     }),
 
     // API key management
@@ -312,151 +345,131 @@ export function createAINamespace() {
       return 0;
     }),
 
-    // Instance configuration
+    // Instance configuration (takes handle as first argument)
     TEMPERATURE: createFunction('AI.TEMPERATURE', (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const temp = requireNumberArg('AI.TEMPERATURE', args, 1);
-      const instance = findInstance(instanceValue);
       instance.setTemperature(temp);
       return temp;
     }),
 
     MAX_TOKENS: createFunction('AI.MAX_TOKENS', (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const tokens = requireNumberArg('AI.MAX_TOKENS', args, 1);
-      const instance = findInstance(instanceValue);
       instance.setMaxTokens(tokens);
       return tokens;
     }),
 
     SYSTEM: createFunction('AI.SYSTEM', (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const prompt = requireStringArg('AI.SYSTEM', args, 1);
-      const instance = findInstance(instanceValue);
       instance.setSystemPrompt(prompt);
       return 0;
     }),
 
     ENDPOINT: createFunction('AI.ENDPOINT', (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const endpoint = requireStringArg('AI.ENDPOINT', args, 1);
-      const instance = findInstance(instanceValue);
       instance.setEndpoint(endpoint);
       return 0;
     }),
 
-    // Text generation
+    // Text generation (takes handle as first argument)
     GENERATE: createFunction('AI.GENERATE', async (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const prompt = requireStringArg('AI.GENERATE', args, 1);
       const maxTokens = args.length >= 3 ? requireNumberArg('AI.GENERATE', args, 2) : undefined;
-      const instance = findInstance(instanceValue);
       return await instance.generate(prompt, maxTokens);
     }),
 
-    // Conversation management
+    // Conversation management (takes handle as first argument)
     USER: createFunction('AI.USER', (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const message = requireStringArg('AI.USER', args, 1);
-      const instance = findInstance(instanceValue);
       instance.addUserMessage(message);
       return 0;
     }),
 
     ASSISTANT: createFunction('AI.ASSISTANT', async (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return await instance.assistant();
     }),
 
     HISTORY: createFunction('AI.HISTORY', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       const history = instance.getHistory();
       return history.map(m => `${m.role}: ${m.content}`);
     }),
 
-    // Instance lifecycle
+    // Instance lifecycle (takes handle as first argument)
     RESET: createFunction('AI.RESET', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       instance.reset();
       return 0;
     }),
 
     DESTROY: createFunction('AI.DESTROY', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       instance.destroy();
       return 0;
     }),
 
-    // Instance information
+    // Instance information (takes handle as first argument)
     MODEL: createFunction('AI.MODEL', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return instance.config?.model || '';
     }),
 
     PROVIDER: createFunction('AI.PROVIDER', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return instance.config?.provider || '';
     }),
 
     TOKENS: createFunction('AI.TOKENS', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return instance.getTokens();
     }),
 
     REQUESTS: createFunction('AI.REQUESTS', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return instance.getRequests();
     }),
 
     ERROR: createFunction('AI.ERROR', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return instance.getError() ? 1 : 0;
     }),
 
     ERRORMSG: createFunction('AI.ERRORMSG', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return instance.getError() || '';
     }),
 
     ERRORCODE: createFunction('AI.ERRORCODE', (args) => {
-      const instanceValue = args[0];
-      const instance = findInstance(instanceValue);
+      const instance = findInstance(args[0]);
       return instance.getErrorCode() || 0;
     }),
 
-    // Specialized operations
+    // Specialized operations (takes handle as first argument)
     TRANSLATE: createFunction('AI.TRANSLATE', async (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const text = requireStringArg('AI.TRANSLATE', args, 1);
       const targetLang = requireStringArg('AI.TRANSLATE', args, 2);
-      const instance = findInstance(instanceValue);
       const prompt = `Translate the following text to ${targetLang}. Only provide the translation, no explanations:\n\n${text}`;
       return await instance.generate(prompt);
     }),
 
     SUMMARIZE: createFunction('AI.SUMMARIZE', async (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const text = requireStringArg('AI.SUMMARIZE', args, 1);
       const maxWords = args.length >= 3 ? requireNumberArg('AI.SUMMARIZE', args, 2) : 100;
-      const instance = findInstance(instanceValue);
       const prompt = `Summarize the following text in approximately ${maxWords} words:\n\n${text}`;
       return await instance.generate(prompt);
     }),
 
     SENTIMENT: createFunction('AI.SENTIMENT', async (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const text = requireStringArg('AI.SENTIMENT', args, 1);
-      const instance = findInstance(instanceValue);
       const prompt = `Analyze the sentiment of the following text and respond with ONLY a number between -1 (very negative) and 1 (very positive):\n\n${text}`;
       const result = await instance.generate(prompt);
       const score = parseFloat(result);
@@ -464,17 +477,15 @@ export function createAINamespace() {
     }),
 
     CODE: createFunction('AI.CODE', async (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const request = requireStringArg('AI.CODE', args, 1);
-      const instance = findInstance(instanceValue);
       const prompt = `Write code for the following request. Provide ONLY the code without explanations:\n\n${request}`;
       return await instance.generate(prompt);
     }),
 
     EXPLAIN: createFunction('AI.EXPLAIN', async (args) => {
-      const instanceValue = args[0];
+      const instance = findInstance(args[0]);
       const code = requireStringArg('AI.EXPLAIN', args, 1);
-      const instance = findInstance(instanceValue);
       const prompt = `Explain what this code does in simple terms:\n\n${code}`;
       return await instance.generate(prompt);
     }),
@@ -504,25 +515,4 @@ export function createAINamespace() {
       return timeout;
     })
   });
-}
-
-// Helper function to find an AI instance from a value
-function findInstance(value: any): AIInstance {
-  // Check if it's a namespace with an ID property
-  if (typeof value === 'object' && value !== null && 'ID' in value) {
-    const id = value.ID;
-    const instance = aiInstances.get(id);
-    if (instance) {
-      return instance;
-    }
-  }
-
-  // Check all instances for a matching value
-  for (const instance of aiInstances.values()) {
-    if (instance.value === value) {
-      return instance;
-    }
-  }
-
-  throw new Error('Invalid AI instance handle');
 }

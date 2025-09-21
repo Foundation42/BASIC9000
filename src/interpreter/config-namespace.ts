@@ -14,6 +14,11 @@ const CONFIG_SEARCH_PATHS = [
   '.basic9000.yaml',
   '.basic9000.yml',
   '.env.basic9000',
+  // Also check parent directories (for apps/retro-terminal finding project root)
+  path.join('..', '..', '.basic9000.json'),
+  path.join('..', '..', '.basic9000.yaml'),
+  path.join('..', '..', '.basic9000.yml'),
+  path.join('..', '..', '.env.basic9000'),
   path.join(os.homedir(), '.basic9000', 'config.json'),
   path.join(os.homedir(), '.basic9000', 'config.yaml'),
   path.join(os.homedir(), '.basic9000', 'secrets.json'),

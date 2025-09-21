@@ -132,13 +132,14 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   env.register('STR', createStringNamespace());
   env.register('FS', createFileSystemNamespace());
   env.register('ARRAY', createArrayNamespace());
+  // Register CONFIG first so auto-loading happens before other namespaces need it
+  env.register('CONFIG', createConfigNamespace());
   env.register('TIME', createTimeNamespace());
   env.register('HTTP', createHttpNamespace());
   env.register('WS', createWebSocketNamespace());
   env.register('JSON', createJsonNamespace());
   env.register('AI', createAINamespace());
   env.register('CANVAS', createCanvasNamespace());
-  env.register('CONFIG', createConfigNamespace());
   return env;
 }
 

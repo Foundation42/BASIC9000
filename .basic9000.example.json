@@ -2,9 +2,9 @@
   "openai_api_key": "sk-proj-YOUR_OPENAI_KEY_HERE",
   "anthropic_api_key": "sk-ant-YOUR_ANTHROPIC_KEY_HERE",
   "ollama_endpoint": "http://localhost:11434/v1",
-  "default_ai_provider": "openai",
-  "default_ai_model": "gpt-3.5-turbo",
-  "default_temperature": 0.7,
+  "ai.provider": "openai",
+  "ai.model": "gpt-3.5-turbo",
+  "ai.temperature": 0.7,
   "custom_setting": "your_value_here",
   "nested": {
     "option": "value"

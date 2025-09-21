@@ -43,6 +43,16 @@ export class HostEnvironment {
   public get(name: string): HostEntry | undefined {
     return this.root.get(normalize(name));
   }
+
+  public getAllNamespaces(): HostNamespaceValue[] {
+    const namespaces: HostNamespaceValue[] = [];
+    for (const entry of this.root.values()) {
+      if (isHostNamespace(entry)) {
+        namespaces.push(entry);
+      }
+    }
+    return namespaces;
+  }
 }
 
 export function createNamespace(
