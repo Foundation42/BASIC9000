@@ -5,6 +5,10 @@ import { requireNumberArg, requireStringArg } from './host-defaults.js';
 let nextCanvasId = 1;
 const canvasInstances = new Map<number, CanvasState>();
 
+// Test mode - capture commands for golden testing
+let testMode = false;
+let testOutput: string[] = [];
+
 interface CanvasState {
   id: number;
   name?: string;
@@ -907,6 +911,98 @@ export function createCanvasNamespace() {
 
       const inPath = sendCanvasCommandSync('pointInPath', { id: canvasId, x, y });
       return inPath ? 1 : 0;
+    }),
+
+    // Test functions for golden testing
+    __TEST_START: createFunction('CANVAS.__TEST_START', (args) => {
+      testMode = true;
+      testOutput = [];
+      return 0;
+    }),
+
+    __TEST_STOP: createFunction('CANVAS.__TEST_STOP', (args) => {
+      testMode = false;
+      return 0;
+    }),
+
+    __TEST_OUTPUT: createFunction('CANVAS.__TEST_OUTPUT', (args) => {
+      return testOutput.join('\n');
+    }),
+
+    __TEST_CLEAR: createFunction('CANVAS.__TEST_CLEAR', (args) => {
+      testOutput = [];
+      return 0;
+    }),
+
+    // Test stub for NEW that returns a mock canvas ID
+    __TEST_NEW: createFunction('CANVAS.__TEST_NEW', (args) => {
+      const width = requireNumberArg('CANVAS.__TEST_NEW', args, 0);
+      const height = requireNumberArg('CANVAS.__TEST_NEW', args, 1);
+
+      const canvasId = nextCanvasId++;
+      canvasInstances.set(canvasId, {
+        id: canvasId,
+        width,
+        height,
+        visible: false,
+        x: 0,
+        y: 0,
+        zIndex: 0,
+        opacity: 1,
+        currentColor: 'black',
+        lineWidth: 1,
+        font: '10px Arial',
+        textAlign: 'left',
+        textBaseline: 'top',
+        mouseX: 0,
+        mouseY: 0,
+        clicked: false,
+        mouseButton: 0
+      });
+
+      if (testMode) testOutput.push(`NEW ${width},${height}`);
+      return canvasId;
+    }),
+
+    // Test stubs that echo arguments
+    __TEST_LINE: createFunction('CANVAS.__TEST_LINE', (args) => {
+      const canvasId = requireNumberArg('CANVAS.__TEST_LINE', args, 0);
+      const x1 = requireNumberArg('CANVAS.__TEST_LINE', args, 1);
+      const y1 = requireNumberArg('CANVAS.__TEST_LINE', args, 2);
+      const x2 = requireNumberArg('CANVAS.__TEST_LINE', args, 3);
+      const y2 = requireNumberArg('CANVAS.__TEST_LINE', args, 4);
+
+      if (testMode) testOutput.push(`LINE ${x1},${y1},${x2},${y2}`);
+      return canvasId;
+    }),
+
+    __TEST_CIRCLE: createFunction('CANVAS.__TEST_CIRCLE', (args) => {
+      const canvasId = requireNumberArg('CANVAS.__TEST_CIRCLE', args, 0);
+      const x = requireNumberArg('CANVAS.__TEST_CIRCLE', args, 1);
+      const y = requireNumberArg('CANVAS.__TEST_CIRCLE', args, 2);
+      const radius = requireNumberArg('CANVAS.__TEST_CIRCLE', args, 3);
+
+      if (testMode) testOutput.push(`CIRCLE ${x},${y},${radius}`);
+      return canvasId;
+    }),
+
+    __TEST_RECT: createFunction('CANVAS.__TEST_RECT', (args) => {
+      const canvasId = requireNumberArg('CANVAS.__TEST_RECT', args, 0);
+      const x = requireNumberArg('CANVAS.__TEST_RECT', args, 1);
+      const y = requireNumberArg('CANVAS.__TEST_RECT', args, 2);
+      const width = requireNumberArg('CANVAS.__TEST_RECT', args, 3);
+      const height = requireNumberArg('CANVAS.__TEST_RECT', args, 4);
+
+      if (testMode) testOutput.push(`RECT ${x},${y},${width},${height}`);
+      return canvasId;
+    }),
+
+    __TEST_COLOR: createFunction('CANVAS.__TEST_COLOR', (args) => {
+      const canvasId = requireNumberArg('CANVAS.__TEST_COLOR', args, 0);
+      const color = requireStringArg('CANVAS.__TEST_COLOR', args, 1);
+
+      if (testMode) testOutput.push(`COLOR ${color}`);
+      return canvasId;
     })
   });
 }

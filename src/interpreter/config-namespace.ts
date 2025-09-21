@@ -185,9 +185,13 @@ export function createConfigNamespace() {
       const key = requireStringArg('CONFIG.GET', args, 0);
       const configId = args.length >= 2 ? requireStringArg('CONFIG.GET', args, 1) : '_auto';
 
+      if (key === '') {
+        throw new Error('CONFIG.GET: Key cannot be empty');
+      }
+
       const config = configStore.get(configId);
       if (!config) {
-        return '';
+        throw new Error(`CONFIG.GET: Configuration '${configId}' not found`);
       }
 
       // Support nested keys with dot notation
@@ -197,18 +201,30 @@ export function createConfigNamespace() {
         if (value && typeof value === 'object') {
           value = value[k];
         } else {
-          return '';
+          throw new Error(`CONFIG.GET: Key '${key}' not found in configuration`);
         }
       }
 
-      return value !== undefined ? String(value) : '';
+      if (value === undefined) {
+        throw new Error(`CONFIG.GET: Key '${key}' not found in configuration`);
+      }
+
+      // Preserve type information for numbers and booleans
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        return value;
+      }
+      return String(value);
     }),
 
     // Set a config value
     SET: createFunction('CONFIG.SET', (args) => {
       const key = requireStringArg('CONFIG.SET', args, 0);
-      const value = requireStringArg('CONFIG.SET', args, 1);
+      const value = args[1]; // Accept any type, don't force string conversion
       const configId = args.length >= 3 ? requireStringArg('CONFIG.SET', args, 2) : '_auto';
+
+      if (key === '') {
+        throw new Error('CONFIG.SET: Key cannot be empty');
+      }
 
       let config = configStore.get(configId);
       if (!config) {
@@ -230,7 +246,7 @@ export function createConfigNamespace() {
 
       // Also update environment variable
       const envKey = key.toUpperCase().replace(/[-\s.]/g, '_');
-      process.env[envKey] = value;
+      process.env[envKey] = String(value);
 
       return 0;
     }),

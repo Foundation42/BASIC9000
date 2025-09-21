@@ -279,6 +279,26 @@ class ExecutionContext {
     }
   }
 
+  // Better scope management for function calls
+  public saveFunctionScope(parameterNames: string[]): Map<string, RuntimeValue | undefined> {
+    const saved = new Map<string, RuntimeValue | undefined>();
+    for (const paramName of parameterNames) {
+      const normalizedName = normalizeIdentifier(paramName);
+      saved.set(normalizedName, this.variables.get(normalizedName));
+    }
+    return saved;
+  }
+
+  public restoreFunctionScope(saved: Map<string, RuntimeValue | undefined>): void {
+    for (const [paramName, originalValue] of saved) {
+      if (originalValue === undefined) {
+        this.variables.delete(paramName);
+      } else {
+        this.variables.set(paramName, originalValue);
+      }
+    }
+  }
+
   public saveDeferScope(): Array<{ type: 'statement', statement: StatementNode } | { type: 'block', statements: StatementNode[] }> {
     return [...this.deferStack];
   }
@@ -706,9 +726,47 @@ class Evaluator {
   }
 
   private async captureDeferredStatement(statement: StatementNode): Promise<any> {
-    // For now, return the statement as-is since we need to execute it in the proper scope context
-    // The specification says values should be captured at DEFER point, but for assignment statements,
-    // the variable context should be preserved
+    // Capture values at DEFER registration time for proper Go-style semantics
+
+    if (statement.type === 'ExpressionStatement') {
+      // For expression statements (like function calls), we need to capture the arguments
+      const expr = statement.expression;
+      if (expr.type === 'CallExpression') {
+        // Capture the function arguments at this moment
+        const capturedArgs = await Promise.all(
+          expr.args.map(arg => this.evaluateExpression(arg))
+        );
+
+        // Create a new call expression with captured literal values
+        const capturedCallExpr = {
+          ...expr,
+          args: capturedArgs.map((value, index) => {
+            // Convert runtime values back to literal expressions
+            const originalToken = this.getExpressionToken(expr.args[index]);
+            if (typeof value === 'string') {
+              return { type: 'StringLiteral' as const, value, token: originalToken };
+            } else if (typeof value === 'number') {
+              return { type: 'NumberLiteral' as const, value, token: originalToken };
+            } else if (typeof value === 'boolean') {
+              return { type: 'BoolLiteral' as const, value, token: originalToken };
+            } else {
+              // For complex values, fall back to original expression
+              return expr.args[index];
+            }
+          })
+        };
+
+        return {
+          type: 'statement',
+          statement: {
+            ...statement,
+            expression: capturedCallExpr
+          }
+        };
+      }
+    }
+
+    // For other statement types, capture as-is (might need more sophisticated handling)
     return { type: 'statement', statement };
   }
 
@@ -1363,18 +1421,15 @@ class Evaluator {
         // For REF parameters, we need to get a reference to the variable
         if (argExpr.type === 'Identifier') {
           const varName = argExpr.name;
-          const normalizedName = normalizeIdentifier(varName);
 
-          // Create a RefValue that directly accesses the saved scope Map
+          // Create a RefValue that directly accesses the current context (global scope)
           const ref = new RefValue(
             varName,
             () => {
-              const val = savedScope.get(normalizedName);
-              return val !== undefined ? val : defaultValueForIdentifier(varName);
+              return this.context.getVariable(varName);
             },
             (newValue) => {
-              const coerced = coerceValueForIdentifier(varName, newValue, token);
-              savedScope.set(normalizedName, coerced);
+              this.context.setVariable(varName, newValue, token);
             }
           );
           args.push(ref as any);
@@ -1917,7 +1972,13 @@ class Evaluator {
     token: Token,
     callerScope: Map<string, RuntimeValue>
   ): Promise<RuntimeValue> {
-    // The callerScope was already saved, now we just need to use it
+    // Save only non-REF parameter names for proper lexical scoping
+    // REF parameters should not be restored as they need to maintain their RefValue connections
+    const nonRefParameterNames = func.parameters
+      .filter(p => !p.isRef)
+      .map(p => p.name.name);
+    const savedParameterScope = this.context.saveFunctionScope(nonRefParameterNames);
+
     // Also save the DEFER scope to isolate function-level defers
     const callerDeferScope = this.context.saveDeferScope();
     this.context.deferStack = []; // Start fresh defer stack for this function
@@ -1993,8 +2054,8 @@ class Evaluator {
       // This ensures the deferred operations have access to the function's variables
       await this.executeDeferStack();
 
-      // Only AFTER executing defers, restore the previous scope and defer scope
-      this.context.restoreScope(callerScope);
+      // Only AFTER executing defers, restore parameter scope (preserving global variable changes)
+      this.context.restoreFunctionScope(savedParameterScope);
       this.context.restoreDeferScope(callerDeferScope);
     }
   }
