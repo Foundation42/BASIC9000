@@ -18,8 +18,6 @@ export type StatementNode =
   | IfStatementNode
   | ForStatementNode
   | NextStatementNode
-  | GotoStatementNode
-  | GosubStatementNode
   | ReturnStatementNode
   | StopStatementNode
   | SpawnStatementNode
@@ -97,15 +95,6 @@ export interface NextStatementNode extends BaseStatementNode {
   readonly iterator?: IdentifierNode;
 }
 
-export interface GotoStatementNode extends BaseStatementNode {
-  readonly type: 'GotoStatement';
-  readonly target: ExpressionNode;
-}
-
-export interface GosubStatementNode extends BaseStatementNode {
-  readonly type: 'GosubStatement';
-  readonly target: ExpressionNode;
-}
 
 export interface ReturnStatementNode extends BaseStatementNode {
   readonly type: 'ReturnStatement';

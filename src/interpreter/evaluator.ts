@@ -9,8 +9,6 @@ import type {
   ExitStatementNode,
   ForStatementNode,
   FunctionStatementNode,
-  GosubStatementNode,
-  GotoStatementNode,
   IdentifierNode,
   IfStatementNode,
   InputStatementNode,
@@ -303,7 +301,6 @@ class Evaluator {
   private readonly lineIndexByNumber = new Map<number, number>();
   private readonly forBindings = new Map<string, ForBinding>();
   private readonly forStack: ForFrame[] = [];
-  private readonly gosubStack: StatementPointer[] = [];
   private readonly hostEnvironment: HostEnvironment;
   private stepCount = 0;
   public haltReason: 'END' | 'STOP' | undefined;
@@ -386,10 +383,6 @@ class Evaluator {
         return this.executeFor(statement, position);
       case 'NextStatement':
         return this.executeNext(statement, position);
-      case 'GotoStatement':
-        return this.executeGoto(statement);
-      case 'GosubStatement':
-        return this.executeGosub(statement, position);
       case 'ReturnStatement':
         return this.executeReturn(statement);
       case 'StopStatement':
@@ -638,15 +631,6 @@ class Evaluator {
     return undefined;
   }
 
-  private async executeGoto(statement: GotoStatementNode): Promise<StatementSignal> {
-    const target = await this.evaluateExpression(statement.target);
-    const lineNumber = toLineNumber(target, statement.token);
-    const index = this.lineIndexByNumber.get(lineNumber);
-    if (index === undefined) {
-      throw new RuntimeError(`Unknown line number ${lineNumber}`, statement.token);
-    }
-    return { type: 'jump', targetLineIndex: index, targetStatementIndex: 0 };
-  }
 
   private async assignToWithField(target: WithFieldNode, value: RuntimeValue): Promise<void> {
     // Get the current WITH object from the stack
@@ -913,6 +897,39 @@ class Evaluator {
       );
     }
 
+    // Try UFCS for any value - look for a function or host namespace member
+    const memberName = expression.property.name;
+
+    // First check for user-defined functions
+    const funcValue = this.context.getVariable(memberName);
+    if (funcValue && typeof funcValue === 'object' && funcValue !== null &&
+        'kind' in funcValue && funcValue.kind === 'user-function') {
+      // Return a bound function that will insert the object as the first argument
+      return {
+        kind: 'bound-function' as const,
+        func: funcValue as UserFunctionValue,
+        boundThis: objectValue
+      };
+    }
+
+    // Check for host namespace functions (like CANVAS.COLOR)
+    // Try to find a namespace that might have this function
+    const hostEnvironments = ['CANVAS', 'MATH', 'STRING', 'ARRAY']; // Common namespaces
+    for (const nsName of hostEnvironments) {
+      const namespace = this.hostEnvironment.get(nsName);
+      if (namespace && isHostNamespace(namespace)) {
+        const member = namespace.getMember(memberName);
+        if (member && typeof member === 'object' && member !== null && 'kind' in member && member.kind === 'host-function') {
+          // Return a bound function that will insert the object as the first argument
+          return {
+            kind: 'bound-host-function' as const,
+            func: member as any,
+            boundThis: objectValue
+          };
+        }
+      }
+    }
+
     throw new RuntimeError('Property access is not supported for this value', expression.property.token);
   }
 
@@ -963,6 +980,9 @@ class Evaluator {
       savedScope = this.context.saveScope();
       // For bound functions, the first parameter is the bound object, so we offset by 1
       args = await this.evaluateArgumentsForFunction(bound.func, expression.args, expression.closingParen, 1, savedScope);
+    } else if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'bound-host-function') {
+      // For bound host functions, evaluate arguments normally with spread support
+      args = await this.evaluateArgumentsWithSpread(expression.args);
     } else {
       // For host functions or unknown callables, evaluate normally with spread support
       args = await this.evaluateArgumentsWithSpread(expression.args);
@@ -1352,25 +1372,6 @@ class Evaluator {
     return undefined;
   }
 
-  private async executeGosub(
-    statement: GosubStatementNode,
-    position: StatementPosition
-  ): Promise<StatementSignal> {
-    this.ensureCallDepthWithinBudget(statement.token);
-    const target = await this.evaluateExpression(statement.target);
-    const lineNumber = toLineNumber(target, statement.token);
-    const lineIndex = this.lineIndexByNumber.get(lineNumber);
-    if (lineIndex === undefined) {
-      throw new RuntimeError(`Unknown subroutine line ${lineNumber}`, statement.token);
-    }
-
-    const resumePointer =
-      this.findNextStatementPointer(position.lineIndex, position.statementIndex) ??
-      endPointer(this.program);
-    this.gosubStack.push(resumePointer);
-
-    return { type: 'jump', targetLineIndex: lineIndex, targetStatementIndex: 0 };
-  }
 
   private async executeFunction(statement: FunctionStatementNode): Promise<undefined> {
     // Store function definition in context
@@ -1517,18 +1518,6 @@ class Evaluator {
   }
 
   private async executeReturn(statement: ReturnStatementNode): Promise<StatementSignal> {
-    // Check if this is a function/sub return or a GOSUB return
-    // For now, we'll handle GOSUB returns here
-    if (statement.value === undefined && this.gosubStack.length > 0) {
-      // GOSUB style return
-      const pointer = this.gosubStack.pop()!;
-      return {
-        type: 'jump',
-        targetLineIndex: pointer.lineIndex,
-        targetStatementIndex: pointer.statementIndex
-      };
-    }
-
     // Function/Sub return
     let value: RuntimeValue = null;
     if (statement.value) {
@@ -1537,12 +1526,6 @@ class Evaluator {
     return { type: 'return', value };
   }
 
-  private ensureCallDepthWithinBudget(token: Token): void {
-    const { maxCallDepth } = this.options;
-    if (typeof maxCallDepth === 'number' && this.gosubStack.length >= maxCallDepth) {
-      throw new RuntimeError('Exceeded maximum call depth', token);
-    }
-  }
 
   private resolveIdentifier(identifier: IdentifierNode): RuntimeValue {
     if (this.context.hasVariable(identifier.name)) {
@@ -1580,6 +1563,18 @@ class Evaluator {
       // Use the savedScope if provided, otherwise save the current scope
       const scope = savedScope ?? this.context.saveScope();
       return this.executeUserFunction(bound.func, fullArgs, token, scope);
+    }
+
+    // Check for bound host functions (UFCS)
+    if (typeof callee === 'object' && callee !== null && 'kind' in callee && callee.kind === 'bound-host-function') {
+      const bound = callee as any; // We'll use 'any' since we defined the interface
+      // Insert the bound object as the first argument
+      const fullArgs = [bound.boundThis, ...args];
+      try {
+        return await bound.func.invoke(fullArgs, this.makeHostFunctionContext(token));
+      } catch (error) {
+        throw this.wrapHostError(error, token);
+      }
     }
 
     // Check for user-defined functions
@@ -2011,22 +2006,6 @@ function modulo(a: number, b: number): number {
   return ((a % b) + b) % b;
 }
 
-function toLineNumber(value: RuntimeValue, token: Token): number {
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value) || !Number.isInteger(value)) {
-      throw new RuntimeError('GOTO requires an integer line number', token);
-    }
-    return value;
-  }
-  if (typeof value !== 'string') {
-    throw new RuntimeError('GOTO requires an integer line number', token);
-  }
-  const parsed = Number(value.trim());
-  if (!Number.isInteger(parsed)) {
-    throw new RuntimeError('GOTO requires an integer line number', token);
-  }
-  return parsed;
-}
 
 function makePointerKey(pointer: StatementPointer): string {
   return `${pointer.lineIndex}:${pointer.statementIndex}`;

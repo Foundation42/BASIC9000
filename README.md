@@ -9,7 +9,7 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 ## ✨ Features
 
 ### Classic BASIC with Modern Power
-- **Traditional BASIC syntax** with line numbers, GOTO, and GOSUB
+- **Modern BASIC syntax** with structured programming (SUB/FUNCTION)
 - **Modern extensions**: HTTP/JSON, async/await, WebSockets, and GPU compute
 - **Real-time syntax highlighting** with customizable color themes
 - **Retro CRT terminal** aesthetic with authentic green phosphor glow
@@ -26,7 +26,7 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - 📦 **Record Literals**: Create instances with `Type { field: value }` syntax
 - 🔍 **Type Annotations**: Optional type declarations with `AS TYPE`
 - ✏️ **Field Modification**: Direct field updates with `record.field = value`
-- 🎯 **UFCS**: Uniform Function Call Syntax for method-like calls
+- 🎯 **UFCS**: Uniform Function Call Syntax for method-like calls with chaining support
 - 🏠 **PROPERTY**: Computed properties with getter/setter support
 - 🔄 **REF Parameters**: Pass-by-reference for in-place modifications
 - 🎛️ **Default Parameters**: Functions with optional parameters
@@ -68,6 +68,12 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - Proper bounds checking and error messages
 - No more `ARRAY.GET()` - use the clean syntax!
 
+#### ⛓️ **Chained UFCS Elegance**
+- **Method chaining**: `canvas.COLOR("#ff0000").RECT(10, 10, 50, 50).FILLCIRCLE(100, 100, 25)`
+- Fluent interfaces for graphics and data manipulation
+- Every mutating operation returns the handle for chaining
+- Write elegant, readable graphics code! ✨
+
 #### 🎨 **Syntax Highlighting Glow-Up**
 - **70+ new keywords** and functions now highlighted
 - All AI, MATH, CANVAS namespaces properly colorized
@@ -80,10 +86,10 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - Clean terminal initialization sequence
 
 ### 📊 **By The Numbers:**
-- ✅ **87/87 tests passing** (100% success rate!)
-- 🎯 **4 major features** implemented and polished
-- 🚀 **Clean test suite** with proper error handling
-- 💚 **Zero breaking changes** - everything still works!
+- ✅ **81/81 tests passing** (100% success rate!)
+- 🎯 **5 major features** implemented and polished
+- 🚀 **Modernized codebase** with legacy GOTO/GOSUB removed
+- 💚 **Cleaner, more maintainable** structured programming focus!
 
 **BASIC9000 is now more powerful than ever while maintaining that nostalgic charm!** 🏆
 
@@ -233,10 +239,11 @@ LET length = ARRAY.LENGTH(items)
 ### Concurrent Programming
 ```basic
 ROUTINE weather_monitor
-  10 LET temp$ = HTTP.GET("api.weather.com/temp")
-  20 PRINT "Current: " + temp$
-  30 SYS.SLEEP(60000)
-  40 GOTO 10
+  WHILE TRUE
+    LET temp$ = HTTP.GET("api.weather.com/temp")
+    PRINT "Current: " + temp$
+    SYS.SLEEP(60000)
+  WEND
 END ROUTINE
 
 SPAWN weather_monitor
@@ -341,18 +348,26 @@ FS.APPEND("log.txt", TIME.NOW() + " - Event logged")
 
 ### Interactive Menu
 ```basic
-10 PRINT "=== MAIN MENU ==="
-20 PRINT "1. Weather"
-30 PRINT "2. Time"
-40 PRINT "3. Exit"
-50 INPUT "Choice: ", choice
-60 IF choice = 1 THEN GOSUB 100
-70 IF choice = 2 THEN PRINT TIME.NOW()
-80 IF choice = 3 THEN END
-90 GOTO 10
-100 REM Weather subroutine
-110 PRINT HTTP.GET("wttr.in/?format=3")
-120 RETURN
+SUB ShowWeather()
+  PRINT HTTP.GET("wttr.in/?format=3")
+END SUB
+
+WHILE TRUE
+  PRINT "=== MAIN MENU ==="
+  PRINT "1. Weather"
+  PRINT "2. Time"
+  PRINT "3. Exit"
+  INPUT "Choice: ", choice
+
+  SELECT CASE choice
+    CASE 1
+      ShowWeather()
+    CASE 2
+      PRINT TIME.NOW()
+    CASE 3
+      END
+  END SELECT
+WEND
 ```
 
 ### Canvas Graphics

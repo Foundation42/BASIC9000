@@ -56,10 +56,6 @@ describe('evaluator', () => {
     expect(result.outputs).toEqual(['OK']);
   });
 
-  it('handles goto with numeric targets', async () => {
-    const result = await run('10 PRINT "A"\n20 GOTO 40\n30 PRINT "B"\n40 PRINT "C"');
-    expect(result.outputs).toEqual(['A', 'C']);
-  });
 
   it('performs numeric comparisons and boolean math', async () => {
     const result = await run('IF 5 > 3 THEN PRINT 1 ELSE PRINT 0');
@@ -91,9 +87,6 @@ LET v = Vector { x: 1 }
     await expect(run(program.trim())).rejects.toThrow(RuntimeError);
   });
 
-  it('raises runtime error for unsupported constructs', async () => {
-    await expect(run('GOSUB 10')).rejects.toThrow(RuntimeError);
-  });
 
   it('halts on STOP with state preserved', async () => {
     const program = 'LET X = 10\nSTOP\nPRINT X * 2';
@@ -149,50 +142,13 @@ LET v = Vector { x: 1 }
     );
   });
 
-  it('executes GOSUB/RETURN and resumes at the correct statement', async () => {
-    const program = `
-10 PRINT "START"
-20 GOSUB 100
-30 PRINT "END"
-40 STOP
-100 PRINT "SUB"
-110 RETURN
-`;
-    const result = await run(program.trim());
-    expect(result.outputs).toEqual(['START', 'SUB', 'END']);
-    expect(result.halted).toBe('STOP');
-  });
 
-  it('supports inline GOSUB with statements following on same line', async () => {
-    const program = 'PRINT "A": GOSUB 100: PRINT "B"\nSTOP\n100 PRINT "SUB"\nRETURN';
-    const result = await run(program);
-    expect(result.outputs).toEqual(['A', 'SUB', 'B']);
-  });
 
-  it('handles nested GOSUB invocations with stacked returns', async () => {
-    const program = `
-10 GOSUB 100
-20 PRINT "DONE"
-30 STOP
-100 PRINT "L1"
-110 GOSUB 200
-120 PRINT "L1-POST"
-130 RETURN
-200 PRINT "L2"
-210 RETURN
-`;
-    const result = await run(program.trim());
-    expect(result.outputs).toEqual(['L1', 'L2', 'L1-POST', 'DONE']);
-  });
 
   it('throws when RETURN appears without matching GOSUB', async () => {
     await expect(run('RETURN')).rejects.toThrow(RuntimeError);
   });
 
-  it('enforces maximum call depth when provided', async () => {
-    const recursive = '10 GOSUB 10';
-    await expect(run(recursive, { maxCallDepth: 8 })).rejects.toThrow(RuntimeError);
-  });
 
   it('executes FOR/NEXT loops with implicit body on next line', async () => {
     const program = `

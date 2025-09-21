@@ -52,6 +52,12 @@ export interface BoundFunctionValue {
   readonly boundThis: RuntimeValue;
 }
 
+export interface BoundHostFunctionValue {
+  readonly kind: 'bound-host-function';
+  readonly func: HostFunctionValue;
+  readonly boundThis: RuntimeValue;
+}
+
 export class RefValue {
   constructor(
     public readonly varName: string,
@@ -74,6 +80,7 @@ export type RuntimeValue =
   | HostFunctionValue
   | UserFunctionValue
   | BoundFunctionValue
+  | BoundHostFunctionValue
   | RuntimeValue[]
   | RuntimeRecordValue;
 

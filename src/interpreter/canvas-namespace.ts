@@ -240,7 +240,7 @@ export function createCanvasNamespace() {
 
       state.currentColor = color;
       sendCanvasCommand('color', { id: canvasId, color });
-      return 0;
+      return canvasId;
     }),
 
     LINEWIDTH: createFunction('CANVAS.LINEWIDTH', (args) => {
@@ -252,7 +252,7 @@ export function createCanvasNamespace() {
 
       state.lineWidth = width;
       sendCanvasCommand('lineWidth', { id: canvasId, width });
-      return 0;
+      return canvasId;
     }),
 
     GLOBALPHA: createFunction('CANVAS.GLOBALPHA', (args) => {
@@ -275,7 +275,7 @@ export function createCanvasNamespace() {
 
       state.font = font;
       sendCanvasCommand('font', { id: canvasId, font });
-      return 0;
+      return canvasId;
     }),
 
     // Graphics State Stack
@@ -348,7 +348,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('line', { id: canvasId, x1, y1, x2, y2 });
-      return 0;
+      return canvasId;
     }),
 
     // Shapes
@@ -363,7 +363,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('rect', { id: canvasId, x, y, w, h });
-      return 0;
+      return canvasId;
     }),
 
     FILLRECT: createFunction('CANVAS.FILLRECT', (args) => {
@@ -377,7 +377,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('fillRect', { id: canvasId, x, y, w, h });
-      return 0;
+      return canvasId;
     }),
 
     CIRCLE: createFunction('CANVAS.CIRCLE', (args) => {
@@ -390,7 +390,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('circle', { id: canvasId, x, y, radius });
-      return 0;
+      return canvasId;
     }),
 
     FILLCIRCLE: createFunction('CANVAS.FILLCIRCLE', (args) => {
@@ -403,7 +403,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('fillCircle', { id: canvasId, x, y, radius });
-      return 0;
+      return canvasId;
     }),
 
     ARC: createFunction('CANVAS.ARC', (args) => {
@@ -567,7 +567,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('text', { id: canvasId, text, x, y });
-      return 0;
+      return canvasId;
     }),
 
     FILLTEXT: createFunction('CANVAS.FILLTEXT', (args) => {

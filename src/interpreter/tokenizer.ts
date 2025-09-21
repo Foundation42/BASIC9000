@@ -53,8 +53,6 @@ const KEYWORDS = new Set<string>([
   'TO',
   'STEP',
   'NEXT',
-  'GOTO',
-  'GOSUB',
   'RETURN',
   'END',
   'STOP',

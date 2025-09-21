@@ -16,8 +16,6 @@ import type {
   ExpressionStatementNode,
   ForStatementNode,
   FunctionStatementNode,
-  GosubStatementNode,
-  GotoStatementNode,
   IdentifierNode,
   IfStatementNode,
   InputStatementNode,
@@ -154,15 +152,6 @@ class Parser {
       return this.parseNextStatement(keyword);
     }
 
-    if (this.matchKeyword('GOTO')) {
-      const keyword = this.previous();
-      return this.parseGotoStatement(keyword);
-    }
-
-    if (this.matchKeyword('GOSUB')) {
-      const keyword = this.previous();
-      return this.parseGosubStatement(keyword);
-    }
 
     if (this.matchKeyword('RETURN')) {
       const keyword = this.previous();
@@ -448,15 +437,6 @@ class Parser {
     return { type: 'NextStatement', token: keyword, iterator };
   }
 
-  private parseGotoStatement(keyword: Token): GotoStatementNode {
-    const target = this.parseExpression();
-    return { type: 'GotoStatement', token: keyword, target };
-  }
-
-  private parseGosubStatement(keyword: Token): GosubStatementNode {
-    const target = this.parseExpression();
-    return { type: 'GosubStatement', token: keyword, target };
-  }
 
   private parseInlineStatements(stopKeywords: string[]): StatementNode[] {
     const statements: StatementNode[] = [];

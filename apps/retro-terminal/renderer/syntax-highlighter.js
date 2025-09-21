@@ -3,7 +3,7 @@
 const KEYWORDS = [
   // Core BASIC keywords
   'LET', 'PRINT', 'IF', 'THEN', 'ELSE', 'END', 'FOR', 'TO', 'NEXT', 'WHILE', 'WEND',
-  'DO', 'LOOP', 'GOTO', 'GOSUB', 'RETURN', 'REM', 'DIM', 'FUNCTION', 'SUB',
+  'DO', 'LOOP', 'RETURN', 'REM', 'DIM', 'FUNCTION', 'SUB',
   // Modern control flow
   'SELECT', 'CASE', 'SPAWN', 'ROUTINE', 'WITH', 'TRY', 'CATCH', 'FINALLY', 'THROW',
   'EXIT', 'CALL', 'ASYNC', 'AWAIT',
