@@ -156,7 +156,7 @@ export function createCanvasNamespace() {
       state.x = x;
       state.y = y;
       sendCanvasCommand('position', { id: canvasId, x, y });
-      return 0;
+      return canvasId;
     }),
 
     SIZE: createFunction('CANVAS.SIZE', (args) => {
@@ -170,7 +170,7 @@ export function createCanvasNamespace() {
       state.width = width;
       state.height = height;
       sendCanvasCommand('size', { id: canvasId, width, height });
-      return 0;
+      return canvasId;
     }),
 
     SHOW: createFunction('CANVAS.SHOW', (args) => {
@@ -181,7 +181,7 @@ export function createCanvasNamespace() {
 
       state.visible = true;
       sendCanvasCommand('show', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     HIDE: createFunction('CANVAS.HIDE', (args) => {
@@ -192,7 +192,7 @@ export function createCanvasNamespace() {
 
       state.visible = false;
       sendCanvasCommand('hide', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     LAYER: createFunction('CANVAS.LAYER', (args) => {
@@ -204,7 +204,7 @@ export function createCanvasNamespace() {
 
       state.zIndex = zIndex;
       sendCanvasCommand('layer', { id: canvasId, zIndex });
-      return 0;
+      return canvasId;
     }),
 
     OPACITY: createFunction('CANVAS.OPACITY', (args) => {
@@ -216,7 +216,7 @@ export function createCanvasNamespace() {
 
       state.opacity = Math.max(0, Math.min(1, opacity));
       sendCanvasCommand('opacity', { id: canvasId, opacity: state.opacity });
-      return 0;
+      return canvasId;
     }),
 
     // Canvas Lifecycle
@@ -228,7 +228,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('clear', { id: canvasId, color });
-      return 0;
+      return canvasId;
     }),
 
     DESTROY: createFunction('CANVAS.DESTROY', (args) => {
@@ -240,7 +240,7 @@ export function createCanvasNamespace() {
 
       canvasInstances.delete(canvasId);
       sendCanvasCommand('destroy', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     // Drawing Context
@@ -276,7 +276,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('globalAlpha', { id: canvasId, alpha });
-      return 0;
+      return canvasId;
     }),
 
     FONT: createFunction('CANVAS.FONT', (args) => {
@@ -299,7 +299,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('save', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     RESTORE: createFunction('CANVAS.RESTORE', (args) => {
@@ -309,7 +309,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('restore', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     // Basic Drawing Primitives
@@ -323,7 +323,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('pixel', { id: canvasId, x, y, color: color || state.currentColor });
-      return 0;
+      return canvasId;
     }),
 
     MOVETO: createFunction('CANVAS.MOVETO', (args) => {
@@ -335,7 +335,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('moveTo', { id: canvasId, x, y });
-      return 0;
+      return canvasId;
     }),
 
     LINETO: createFunction('CANVAS.LINETO', (args) => {
@@ -347,7 +347,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('lineTo', { id: canvasId, x, y });
-      return 0;
+      return canvasId;
     }),
 
     LINE: createFunction('CANVAS.LINE', (args) => {
@@ -431,7 +431,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('arc', { id: canvasId, x, y, radius, startAngle, endAngle });
-      return 0;
+      return canvasId;
     }),
 
     // Complex Paths
@@ -442,7 +442,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('beginPath', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     CURVETO: createFunction('CANVAS.CURVETO', (args) => {
@@ -458,7 +458,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('curveTo', { id: canvasId, cp1x, cp1y, cp2x, cp2y, x, y });
-      return 0;
+      return canvasId;
     }),
 
     CLOSEPATH: createFunction('CANVAS.CLOSEPATH', (args) => {
@@ -468,7 +468,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('closePath', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     STROKE: createFunction('CANVAS.STROKE', (args) => {
@@ -478,7 +478,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('stroke', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     FILL: createFunction('CANVAS.FILL', (args) => {
@@ -488,7 +488,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('fill', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     // Transforms
@@ -501,7 +501,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('translate', { id: canvasId, dx, dy });
-      return 0;
+      return canvasId;
     }),
 
     ROTATE: createFunction('CANVAS.ROTATE', (args) => {
@@ -512,7 +512,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('rotate', { id: canvasId, angle });
-      return 0;
+      return canvasId;
     }),
 
     SCALE: createFunction('CANVAS.SCALE', (args) => {
@@ -524,7 +524,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('scale', { id: canvasId, sx, sy });
-      return 0;
+      return canvasId;
     }),
 
     RESETMATRIX: createFunction('CANVAS.RESETMATRIX', (args) => {
@@ -534,7 +534,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('resetMatrix', { id: canvasId });
-      return 0;
+      return canvasId;
     }),
 
     TRANSFORM: createFunction('CANVAS.TRANSFORM', (args) => {
@@ -550,7 +550,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('transform', { id: canvasId, a, b, c, d, e, f });
-      return 0;
+      return canvasId;
     }),
 
     SETMATRIX: createFunction('CANVAS.SETMATRIX', (args) => {
@@ -566,7 +566,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('setMatrix', { id: canvasId, a, b, c, d, e, f });
-      return 0;
+      return canvasId;
     }),
 
     // Text Rendering
@@ -593,7 +593,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('fillText', { id: canvasId, text, x, y });
-      return 0;
+      return canvasId;
     }),
 
     STROKETEXT: createFunction('CANVAS.STROKETEXT', (args) => {
@@ -606,7 +606,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('strokeText', { id: canvasId, text, x, y });
-      return 0;
+      return canvasId;
     }),
 
     // Text Measurement
@@ -639,7 +639,7 @@ export function createCanvasNamespace() {
 
       state.textAlign = align;
       sendCanvasCommand('textAlign', { id: canvasId, align });
-      return 0;
+      return canvasId;
     }),
 
     TEXTBASELINE: createFunction('CANVAS.TEXTBASELINE', (args) => {
@@ -651,7 +651,7 @@ export function createCanvasNamespace() {
 
       state.textBaseline = baseline;
       sendCanvasCommand('textBaseline', { id: canvasId, baseline });
-      return 0;
+      return canvasId;
     }),
 
     // Image Operations
@@ -700,7 +700,7 @@ export function createCanvasNamespace() {
         sendCanvasCommand('drawImage', { id: canvasId, imageId, sx, sy, sw, sh, dx, dy, dw, dh });
       }
 
-      return 0;
+      return canvasId;
     }),
 
     // Canvas-to-Canvas Operations
@@ -731,7 +731,7 @@ export function createCanvasNamespace() {
         sendCanvasCommand('copyCanvas', { sourceId, destId, sx, sy, sw, sh, dx, dy, dw, dh });
       }
 
-      return 0;
+      return destId;
     }),
 
     // Pixel Manipulation
@@ -758,7 +758,7 @@ export function createCanvasNamespace() {
       if (!state) throw new Error(`Invalid canvas handle: ${canvasId}`);
 
       sendCanvasCommand('putPixels', { id: canvasId, imageData, x, y });
-      return 0;
+      return canvasId;
     }),
 
     GETPIXEL: createFunction('CANVAS.GETPIXEL', (args) => {
@@ -806,7 +806,7 @@ export function createCanvasNamespace() {
       if (!gradient) throw new Error(`Invalid gradient handle: ${gradientId}`);
 
       gradient.stops.push({ position, color });
-      return 0;
+      return gradientId;
     }),
 
     FILLSTYLE: createFunction('CANVAS.FILLSTYLE', (args) => {
@@ -829,7 +829,7 @@ export function createCanvasNamespace() {
         }
       }
 
-      return 0;
+      return canvasId;
     }),
 
     // Patterns

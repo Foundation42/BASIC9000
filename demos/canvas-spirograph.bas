@@ -28,15 +28,11 @@ PRINT "=== SPIROGRAPH GENERATOR ==="
 PRINT "Creating mathematical art..."
 PRINT
 
-REM Create canvas
+REM Create canvas with beautiful UFCS method chaining
 LET width AS NUMBER = 800
 LET height AS NUMBER = 600
 LET canvas = NEW CANVAS(width, height)
-CANVAS.POSITION(canvas, 100, 50)
-CANVAS.SHOW(canvas)
-
-REM Clear with dark background
-CANVAS.COLOR(canvas, "#000000")
+canvas.POSITION(100, 50).SHOW().COLOR("#000000")
 REM CANVAS.FILLRECT(canvas, 0, 0, width, height)
 
 REM Initialize drawing state
@@ -45,30 +41,26 @@ LET drawState = DrawingState { centerX: width / 2, centerY: height / 2, currentC
 REM Initialize base spirograph parameters
 LET baseParams = SpirographParams { R: 180, r: 70, d: 90, rotations: 10 }
 
-REM Set line style
-CANVAS.LINEWIDTH(canvas, drawState.lineWidth)
+REM Set line style with UFCS
+canvas.LINEWIDTH(drawState.lineWidth)
 
 REM Function to draw one spirograph
 REM Color cycle for rainbow effect
 LET colors$ AS STRING = "#ff0000,#ff7700,#ffdd00,#00ff00,#0099ff,#6633ff"
 
-FOR colorIndex AS NUMBER = 1 TO 6
+FOR colorIndex = 1 TO 6
   REM Parse color from list
   LET colorStart AS NUMBER = (colorIndex - 1) * 8 + 1
   drawState.currentColor = MID$(colors$, colorStart, 7)
 
-  REM Set drawing color
-  CANVAS.COLOR(canvas, drawState.currentColor)
-
-  REM Create layer-specific parameters
+  REM Set drawing color and begin path with UFCS chaining
   LET layerParams = SpirographParams { R: baseParams.R, r: 60 + colorIndex * 10, d: 70 + colorIndex * 5, rotations: baseParams.rotations }
 
-  REM Begin path
-  CANVAS.BEGINPATH(canvas)
+  canvas.COLOR(drawState.currentColor).BEGINPATH()
 
   REM Draw spirograph
   LET firstPoint AS BOOL = TRUE
-  FOR t AS NUMBER = 0 TO 360 * layerParams.rotations STEP 2
+  FOR t = 0 TO 360 * layerParams.rotations STEP 2
     LET angle AS NUMBER = t * 3.14159 / 180
 
     REM Spirograph equations - create point
@@ -77,42 +69,34 @@ FOR colorIndex AS NUMBER = 1 TO 6
     REM Translate to canvas center
     LET screenPoint = Point2D { x: drawState.centerX + curvePoint.x, y: drawState.centerY + curvePoint.y }
 
-    REM Draw line
+    REM Draw line with beautiful UFCS syntax
     IF firstPoint THEN
-      CANVAS.MOVETO(canvas, screenPoint.x, screenPoint.y)
+      canvas.MOVETO(screenPoint.x, screenPoint.y)
       firstPoint = FALSE
     ELSE
-      CANVAS.LINETO(canvas, screenPoint.x, screenPoint.y)
+      canvas.LINETO(screenPoint.x, screenPoint.y)
     END IF
   NEXT t
 
-  REM Stroke the path
-  CANVAS.STROKE(canvas)
+  REM Stroke the path with UFCS
+  canvas.STROKE()
 
   PRINT "Layer " + STR$(colorIndex) + " complete..."
 NEXT colorIndex
 
-REM Add title with glow effect
-CANVAS.FONT(canvas, "bold 36px monospace")
+REM Add title with glow effect using beautiful UFCS chaining
+canvas.FONT("bold 36px monospace").COLOR("#00ff00").GLOBALPHA(0.5)
 
-REM Draw glow
-CANVAS.COLOR(canvas, "#00ff00")
-CANVAS.GLOBALPHA(canvas, 0.5)
-FOR glow AS NUMBER = 1 TO 3
-  CANVAS.TEXT(canvas, "SPIROGRAPH", drawState.centerX - 2 + glow, 50 + glow)
-  CANVAS.TEXT(canvas, "SPIROGRAPH", drawState.centerX - 2 - glow, 50 - glow)
+FOR glow = 1 TO 3
+  canvas.TEXT("SPIROGRAPH", drawState.centerX - 2 + glow, 50 + glow)
+  canvas.TEXT("SPIROGRAPH", drawState.centerX - 2 - glow, 50 - glow)
 NEXT glow
 
-REM Draw main text
-CANVAS.GLOBALPHA(canvas, 1)
-CANVAS.COLOR(canvas, "#7bff78")
-CANVAS.TEXT(canvas, "SPIROGRAPH", drawState.centerX - 2, 50)
+REM Draw main text with elegant chaining
+canvas.GLOBALPHA(1).COLOR("#7bff78").TEXT("SPIROGRAPH", drawState.centerX - 2, 50)
 
-REM Add parameters info
-CANVAS.FONT(canvas, "14px monospace")
-CANVAS.COLOR(canvas, "#7bff78")
-CANVAS.TEXT(canvas, "Mathematical Beauty in BASIC", drawState.centerX - 2, height - 40)
-CANVAS.TEXT(canvas, "R=" + STR$(baseParams.R) + " r=variable d=variable", drawState.centerX - 2, height - 20)
+REM Add parameters info with stunning UFCS method chaining
+canvas.FONT("14px monospace").COLOR("#7bff78").TEXT("Mathematical Beauty in BASIC", drawState.centerX - 2, height - 40).TEXT("R=" + STR$(baseParams.R) + " r=variable d=variable", drawState.centerX - 2, height - 20)
 
 REM Interactive message
 PRINT
