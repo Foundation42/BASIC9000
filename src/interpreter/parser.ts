@@ -15,6 +15,8 @@ import type {
   ExpressionNode,
   ExpressionStatementNode,
   ForStatementNode,
+  WhileStatementNode,
+  DoWhileStatementNode,
   FunctionStatementNode,
   IdentifierNode,
   IfStatementNode,
@@ -151,6 +153,14 @@ class Parser {
     if (this.matchKeyword('FOR')) {
       const keyword = this.previous();
       return this.parseForStatement(keyword);
+    }
+    if (this.matchKeyword('WHILE')) {
+      const keyword = this.previous();
+      return this.parseWhileStatement(keyword);
+    }
+    if (this.matchKeyword('DO')) {
+      const keyword = this.previous();
+      return this.parseDoWhileStatement(keyword);
     }
 
     if (this.matchKeyword('NEXT')) {
@@ -451,6 +461,55 @@ class Parser {
       iterator = this.parseIdentifier();
     }
     return { type: 'NextStatement', token: keyword, iterator };
+  }
+
+  private parseWhileStatement(keyword: Token): WhileStatementNode {
+    const condition = this.parseExpression();
+
+    // Skip optional newlines after condition
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    const body: StatementNode[] = [];
+    while (!this.isAtEnd()) {
+      if (this.matchKeyword('WEND')) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      body.push(this.parseStatement());
+    }
+
+    return { type: 'WhileStatement', token: keyword, condition, body };
+  }
+
+  private parseDoWhileStatement(keyword: Token): DoWhileStatementNode {
+    // Skip optional newlines after DO
+    while (this.match(TokenType.Newline)) {
+      // consume
+    }
+
+    const body: StatementNode[] = [];
+    while (!this.isAtEnd()) {
+      if (this.matchKeyword('WHILE')) {
+        break;
+      }
+
+      if (this.match(TokenType.Newline)) {
+        continue;
+      }
+
+      body.push(this.parseStatement());
+    }
+
+    // Parse the WHILE condition at the end
+    const condition = this.parseExpression();
+
+    return { type: 'DoWhileStatement', token: keyword, condition, body };
   }
 
 

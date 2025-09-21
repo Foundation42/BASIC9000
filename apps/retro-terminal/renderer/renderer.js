@@ -157,6 +157,12 @@ async function executeBuffer() {
   buffer = '';
   cursorPos = 0;
 
+  // Add command to history BEFORE processing (so it's available even if command fails)
+  if (command.trim()) {
+    history.push(command);
+    historyIndex = history.length;
+  }
+
   // Handle special RUN command for loading .bas files
   if (command.toUpperCase().startsWith('RUN ')) {
     const filename = command.substring(4).trim().replace(/^["']|["']$/g, '');
@@ -253,8 +259,6 @@ async function executeBuffer() {
     }
     return;
   }
-  history.push(command);
-  historyIndex = history.length;
 
   if (!command.trim()) {
     showPrompt();

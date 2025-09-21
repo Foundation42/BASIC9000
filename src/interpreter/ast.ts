@@ -17,6 +17,8 @@ export type StatementNode =
   | TypeDeclarationNode
   | IfStatementNode
   | ForStatementNode
+  | WhileStatementNode
+  | DoWhileStatementNode
   | NextStatementNode
   | ReturnStatementNode
   | StopStatementNode
@@ -91,6 +93,18 @@ export interface ForStatementNode extends BaseStatementNode {
   readonly end: ExpressionNode;
   readonly step?: ExpressionNode;
   readonly body?: StatementNode[];
+}
+
+export interface WhileStatementNode extends BaseStatementNode {
+  readonly type: 'WhileStatement';
+  readonly condition: ExpressionNode;
+  readonly body: StatementNode[];
+}
+
+export interface DoWhileStatementNode extends BaseStatementNode {
+  readonly type: 'DoWhileStatement';
+  readonly condition: ExpressionNode;
+  readonly body: StatementNode[];
 }
 
 export interface NextStatementNode extends BaseStatementNode {

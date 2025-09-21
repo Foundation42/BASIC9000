@@ -95,20 +95,29 @@ BASIC9000 is a retro-futuristic BASIC interpreter combining 1980s computing nost
 - Terminal uses green phosphor theme (#7bff78 on #001500 background)
 - GPU errors at startup are normal and don't affect functionality
 
-## Today's Session Achievements 🚀
+## Latest Session Achievements 🚀
 
 This session we successfully:
-1. ✅ Implemented multi-line IF/THEN/ELSE/END IF blocks
-2. ✅ Added ALL classic BASIC math functions (SIN, COS, TAN, etc.)
-3. ✅ Added ALL classic BASIC string functions (MID$, LEFT$, RIGHT$, etc.)
+1. ✅ **IMPLEMENTED WHILE/WEND LOOPS** - Full parser, AST, and evaluator support
+2. ✅ **IMPLEMENTED DO-WHILE LOOPS** - Complete loop control with body-first execution
+3. ✅ **MODERNIZED CANVAS DEMOS** - Updated all demos with UFCS method chaining
+4. ✅ **FIXED UFCS METHOD CHAINING** - Canvas methods now return handles properly
+5. ✅ **COMPREHENSIVE TESTING** - 11 new test cases, all 118 tests passing
+6. ✅ **FIXED COMMAND HISTORY** - RUN commands now stay in history even when they fail
+7. ✅ **STRUCTURED PROGRAMMING** - Replaced old ROUTINE/GOTO with modern functions and loops
+
+## Previous Session Achievements 🌟
+
+Earlier we successfully implemented:
+1. ✅ Multi-line IF/THEN/ELSE/END IF blocks
+2. ✅ ALL classic BASIC math functions (SIN, COS, TAN, etc.)
+3. ✅ ALL classic BASIC string functions (MID$, LEFT$, RIGHT$, etc.)
 4. ✅ Fixed RUN command with smart path resolution
 5. ✅ Added CANVAS.GLOBALPHA for transparency effects
 6. ✅ Created a stunning spirograph demo showcasing mathematical art
 7. ✅ Demonstrated that BASIC9000 can create sophisticated visualizations
 
-## Latest Session Achievements 🤖
-
-### AI Integration Complete!
+## Next Steps
 1. ✅ **Full AI namespace** with handle/ID pattern for IPC compatibility
 2. ✅ **Dynamic UFCS discovery** - language engine agnostic of specific namespaces
 3. ✅ **Unified config system** with proper loading order and parent directory search

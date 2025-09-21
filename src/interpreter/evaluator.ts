@@ -8,6 +8,8 @@ import type {
   ExpressionNode,
   ExitStatementNode,
   ForStatementNode,
+  WhileStatementNode,
+  DoWhileStatementNode,
   FunctionStatementNode,
   IdentifierNode,
   IfStatementNode,
@@ -555,6 +557,10 @@ class Evaluator {
         return this.executeIf(statement, position);
       case 'ForStatement':
         return this.executeFor(statement, position);
+      case 'WhileStatement':
+        return this.executeWhile(statement, position);
+      case 'DoWhileStatement':
+        return this.executeDoWhile(statement, position);
       case 'NextStatement':
         return this.executeNext(statement, position);
       case 'ReturnStatement':
@@ -1777,6 +1783,65 @@ class Evaluator {
         token: statement.token
       });
     }
+
+    return undefined;
+  }
+
+  private async executeWhile(
+    statement: WhileStatementNode,
+    position: StatementPosition
+  ): Promise<StatementSignal | undefined> {
+    // Simple WHILE loop implementation - evaluate condition and execute body
+    while (true) {
+      const conditionValue = await this.evaluateExpression(statement.condition);
+      const isTrue = truthy(conditionValue);
+
+      if (!isTrue) {
+        break;
+      }
+
+      // Execute the body statements
+      for (const stmt of statement.body) {
+        const signal = await this.executeStatement(stmt, position);
+        if (signal) {
+          // Handle control flow signals
+          if (signal.type === 'return' || signal.type === 'halt') {
+            return signal;
+          }
+          // For now, ignore other signals like 'jump' within WHILE body
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private async executeDoWhile(
+    statement: DoWhileStatementNode,
+    position: StatementPosition
+  ): Promise<StatementSignal | undefined> {
+    // Simple DO-WHILE loop implementation - execute body first, then check condition
+    do {
+      // Execute the body statements
+      for (const stmt of statement.body) {
+        const signal = await this.executeStatement(stmt, position);
+        if (signal) {
+          // Handle control flow signals
+          if (signal.type === 'return' || signal.type === 'halt') {
+            return signal;
+          }
+          // For now, ignore other signals like 'jump' within DO-WHILE body
+        }
+      }
+
+      // Check condition after body execution
+      const conditionValue = await this.evaluateExpression(statement.condition);
+      const isTrue = truthy(conditionValue);
+
+      if (!isTrue) {
+        break;
+      }
+    } while (true);
 
     return undefined;
   }
