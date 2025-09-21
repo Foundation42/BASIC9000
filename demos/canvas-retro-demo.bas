@@ -41,7 +41,7 @@ PRINT "Creating retro graphics..."
 PRINT
 
 REM Create main canvas
-LET canvas = CANVAS.CREATE(800, 600)
+LET canvas = NEW CANVAS(800, 600)
 CANVAS.POSITION(canvas, 50, 50)
 CANVAS.SHOW(canvas)
 

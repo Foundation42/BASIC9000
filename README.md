@@ -380,7 +380,7 @@ BASIC9000 includes a full 2D graphics system with over 70 drawing functions!
 
 ```basic
 REM Create and show a canvas
-LET canvas = CANVAS.CREATE(800, 600)
+LET canvas = NEW CANVAS(800, 600)
 CANVAS.POSITION(canvas, 50, 50)
 CANVAS.SHOW(canvas)
 
@@ -420,10 +420,10 @@ RUN demos/canvas-spirograph.bas  ' Mathematical spirograph art
 ```basic
 REM Configure AI (OpenAI, Anthropic, or local server)
 AI.KEY("openai", "your-api-key-here")
-LET assistant = AI.CREATE("openai", "gpt-3.5-turbo")
+LET assistant = NEW AI("openai", "gpt-3.5-turbo")
 
 REM Or use a local Ollama server
-LET local_ai = AI.CREATE("generic", "llama2", "http://localhost:11434/v1")
+LET local_ai = NEW AI("generic", "llama2", "http://localhost:11434/v1")
 
 REM Configure and use
 AI.SYSTEM(assistant, "You are a helpful BASIC programming tutor")

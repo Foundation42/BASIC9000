@@ -25,17 +25,17 @@ PRINT "Creating AI instances..."
 
 REM For OpenAI (requires API key)
 REM AI.KEY("openai", "your-api-key-here")
-REM LET gpt = AI.CREATE("openai", "gpt-3.5-turbo")
+REM LET gpt = NEW AI("openai", "gpt-3.5-turbo")
 
 REM For local Ollama server (OpenAI-compatible)
-REM LET ollama = AI.CREATE("generic", "llama2", "http://localhost:11434/v1")
+REM LET ollama = NEW AI("generic", "llama2", "http://localhost:11434/v1")
 
 REM For Together AI (OpenAI-compatible)
 REM AI.KEY("openai", "your-together-api-key")
-REM LET together = AI.CREATE("generic", "meta-llama/Llama-2-70b-chat-hf", "https://api.together.xyz/v1")
+REM LET together = NEW AI("generic", "meta-llama/Llama-2-70b-chat-hf", "https://api.together.xyz/v1")
 
 REM Demo with a mock endpoint for testing
-LET demo = AI.CREATE("generic", "demo-model", "http://localhost:8080/v1")
+LET demo = NEW AI("generic", "demo-model", "http://localhost:8080/v1")
 AI.ENDPOINT(demo, "http://localhost:8080/v1")
 PRINT "Created demo AI instance"
 PRINT
@@ -116,8 +116,8 @@ LET user_input$ AS STRING
 370 PRINT "=== Demo Complete ==="
 380 PRINT "To use real AI:"
 390 PRINT "1. Set API key: AI.KEY(""openai"", ""your-key-here"")"
-400 PRINT "2. Create instance: LET ai = AI.CREATE(""openai"", ""gpt-3.5-turbo"")"
-410 PRINT "3. Or use local server: LET ai = AI.CREATE(""generic"", ""model"", ""http://localhost:8080/v1"")"
+400 PRINT "2. Create instance: LET ai = NEW AI(""openai"", ""gpt-3.5-turbo"")"
+410 PRINT "3. Or use local server: LET ai = NEW AI(""generic"", ""model"", ""http://localhost:8080/v1"")"
 
 420 REM Clean up
 430 AI.DESTROY(demo)

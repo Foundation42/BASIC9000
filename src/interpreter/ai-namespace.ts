@@ -286,9 +286,9 @@ class AIInstance {
 export function createAINamespace() {
   return createNamespace('AI', {
     // Instance creation
-    CREATE: createFunction('AI.CREATE', (args) => {
-      const provider = requireStringArg('AI.CREATE', args, 0).toLowerCase();
-      const model = requireStringArg('AI.CREATE', args, 1);
+    NEW: createFunction('AI.NEW', (args) => {
+      const provider = requireStringArg('AI.NEW', args, 0).toLowerCase();
+      const model = requireStringArg('AI.NEW', args, 1);
 
       // Support "generic" as an alias for "openai-compatible"
       const normalizedProvider = provider === 'generic' ? 'openai-compatible' : provider;
@@ -297,7 +297,7 @@ export function createAINamespace() {
 
       // If there's a third argument for generic/openai-compatible, it's the endpoint
       if ((normalizedProvider === 'openai-compatible') && args.length >= 3) {
-        const endpoint = requireStringArg('AI.CREATE', args, 2);
+        const endpoint = requireStringArg('AI.NEW', args, 2);
         instance.setEndpoint(endpoint);
       }
 

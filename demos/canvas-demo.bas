@@ -31,7 +31,7 @@ PRINT "Creating a 600x400 canvas..."
 PRINT
 
 REM Create main canvas
-LET canvas = CANVAS.CREATE(600, 400)
+LET canvas = NEW CANVAS(600, 400)
 CANVAS.POSITION(canvas, 100, 100)
 CANVAS.SHOW(canvas)
 

@@ -8,7 +8,7 @@ const KEYWORDS = [
   'SELECT', 'CASE', 'SPAWN', 'ROUTINE', 'WITH', 'TRY', 'CATCH', 'FINALLY', 'THROW',
   'EXIT', 'CALL', 'ASYNC', 'AWAIT',
   // Type system
-  'TYPE', 'AS', 'PROPERTY', 'REF', 'SPREAD', 'CONST',
+  'TYPE', 'AS', 'PROPERTY', 'REF', 'SPREAD', 'CONST', 'NEW',
   // Data types and literals
   'TRUE', 'FALSE', 'NULL',
   // Terminal commands

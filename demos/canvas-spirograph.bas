@@ -31,7 +31,7 @@ PRINT
 REM Create canvas
 LET width AS NUMBER = 800
 LET height AS NUMBER = 600
-LET canvas = CANVAS.CREATE(width, height)
+LET canvas = NEW CANVAS(width, height)
 CANVAS.POSITION(canvas, 100, 50)
 CANVAS.SHOW(canvas)
 

@@ -31,7 +31,7 @@ PRINT "Click and drag to draw!"
 PRINT
 
 REM Create drawing canvas
-LET paint_canvas = CANVAS.CREATE(800, 600)
+LET paint_canvas = NEW CANVAS(800, 600)
 CANVAS.POSITION(paint_canvas, 50, 50)
 CANVAS.SHOW(paint_canvas)
 

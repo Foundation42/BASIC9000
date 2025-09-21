@@ -77,7 +77,7 @@ PRINT "=== Creating Secure AI Instance ==="
 REM The API key is found automatically!
 REM No need to put it in code
 TRY
-  LET ai = AI.CREATE("openai", secureConf.model)
+  LET ai = NEW AI("openai", secureConf.model)
   PRINT "✓ AI instance created successfully"
   status.aiCreated = TRUE
 CATCH

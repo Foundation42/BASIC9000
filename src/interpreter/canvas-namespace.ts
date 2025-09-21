@@ -75,27 +75,27 @@ export function getAndClearPendingCanvasCommands() {
 export function createCanvasNamespace() {
   return createNamespace('CANVAS', {
     // Canvas Management
-    CREATE: createFunction('CANVAS.CREATE', (args) => {
-      const width = requireNumberArg('CANVAS.CREATE', args, 0);
-      const height = requireNumberArg('CANVAS.CREATE', args, 1);
-      const name = args.length >= 3 ? requireStringArg('CANVAS.CREATE', args, 2) : undefined;
+    NEW: createFunction('CANVAS.NEW', (args) => {
+      const width = requireNumberArg('CANVAS.NEW', args, 0);
+      const height = requireNumberArg('CANVAS.NEW', args, 1);
+      const name = args[2] as string | undefined;
 
-      console.log('Canvas.CREATE called with:', { width, height, name });
+      console.log('Canvas.NEW called with:', { width, height, name });
 
-      const id = nextCanvasId++;
+      const canvasId = nextCanvasId++;
       const state: CanvasState = {
-        id,
+        id: canvasId,
         name,
         width,
         height,
         visible: false,
         x: 0,
         y: 0,
-        zIndex: 1,
+        zIndex: 0,
         opacity: 1.0,
-        currentColor: 'white',
+        currentColor: '#000000',
         lineWidth: 1,
-        font: '16px monospace',
+        font: '16px Arial',
         textAlign: 'left',
         textBaseline: 'top',
         mouseX: 0,
@@ -104,10 +104,19 @@ export function createCanvasNamespace() {
         mouseButton: 0
       };
 
-      canvasInstances.set(id, state);
-      sendCanvasCommand('create', { id, width, height, name });
-      return id;
+      canvasInstances.set(canvasId, state);
+      sendCanvasCommand('create', {
+        id: canvasId,
+        width,
+        height,
+        x: state.x,
+        y: state.y,
+        name
+      });
+
+      return canvasId;
     }),
+
 
     // Canvas Properties
     WIDTH: createFunction('CANVAS.WIDTH', (args) => {

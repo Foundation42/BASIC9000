@@ -1,6 +1,6 @@
 REM Test UFCS chaining with CANVAS operations (the main feature)
 
-LET canvas = CANVAS.CREATE(400, 300)
+LET canvas = NEW CANVAS(400, 300)
 
 REM Traditional approach (still works)
 CANVAS.COLOR(canvas, "#ff0000")

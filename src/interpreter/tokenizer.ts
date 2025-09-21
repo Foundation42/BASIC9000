@@ -60,6 +60,7 @@ const KEYWORDS = new Set<string>([
   'OR',
   'NOT',
   'MOD',
+  'NEW',
   'SUB',
   'FUNCTION',
   'ASYNC',

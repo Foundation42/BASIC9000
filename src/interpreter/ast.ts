@@ -213,7 +213,8 @@ export type ExpressionNode =
   | IndexExpressionNode
   | AwaitExpressionNode
   | WithFieldNode
-  | SpreadExpressionNode;
+  | SpreadExpressionNode
+  | NewExpressionNode;
 
 export interface NumberLiteralNode {
   readonly type: 'NumberLiteral';
@@ -335,6 +336,13 @@ export interface WithFieldNode {
 export interface SpreadExpressionNode {
   readonly type: 'SpreadExpression';
   readonly target: ExpressionNode;
+  readonly token: Token;
+}
+
+export interface NewExpressionNode {
+  readonly type: 'NewExpression';
+  readonly typeName: IdentifierNode;
+  readonly args: ExpressionNode[];
   readonly token: Token;
 }
 

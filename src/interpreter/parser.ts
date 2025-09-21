@@ -28,6 +28,7 @@ import type {
   ParameterNode,
   SpawnStatementNode,
   SpreadExpressionNode,
+  NewExpressionNode,
   PrintArgument,
   PrintStatementNode,
   ProgramNode,
@@ -1102,7 +1103,42 @@ class Parser {
       const target = this.parsePrimary();
       return { type: 'SpreadExpression', token, target } satisfies SpreadExpressionNode;
     }
+    if (this.matchKeyword('NEW')) {
+      return this.parseNewExpression();
+    }
     return this.parseCallMember();
+  }
+
+  private parseNewExpression(): ExpressionNode {
+    const token = this.previous(); // NEW keyword
+
+    // Expect a type name (identifier)
+    const typeName = this.consume(TokenType.Identifier, 'Expected type name after NEW') as Token;
+    const typeNameNode: IdentifierNode = {
+      type: 'Identifier',
+      name: typeName.lexeme,
+      token: typeName
+    };
+
+    // Expect opening parenthesis
+    this.consume(TokenType.LeftParen, 'Expected "(" after type name in NEW expression');
+
+    // Parse arguments
+    const args: ExpressionNode[] = [];
+    if (!this.check(TokenType.RightParen)) {
+      do {
+        args.push(this.parseExpression());
+      } while (this.match(TokenType.Comma));
+    }
+
+    this.consume(TokenType.RightParen, 'Expected ")" after NEW expression arguments');
+
+    return {
+      type: 'NewExpression',
+      typeName: typeNameNode,
+      args,
+      token
+    } as NewExpressionNode;
   }
 
   private parseCallMember(): ExpressionNode {
@@ -1400,6 +1436,8 @@ class Parser {
       case 'ConditionalExpression':
         return expression.questionToken;
       case 'SpreadExpression':
+        return expression.token;
+      case 'NewExpression':
         return expression.token;
       default: {
         const exhaustiveCheck: never = expression;

@@ -32,7 +32,8 @@ import type {
   WithFieldNode,
   SelectCaseStatementNode,
   PropertyStatementNode,
-  ConditionalExpressionNode
+  ConditionalExpressionNode,
+  NewExpressionNode
 } from './ast.js';
 import {
   HostEnvironment,
@@ -731,6 +732,8 @@ class Evaluator {
         return this.evaluateConditional(expression);
       case 'SpreadExpression':
         throw new RuntimeError('Spread operator (...) can only be used in function calls', expression.token);
+      case 'NewExpression':
+        return this.evaluateNewExpression(expression);
       default: {
         const exhaustiveCheck: never = expression;
         throw exhaustiveCheck;
@@ -840,6 +843,58 @@ class Evaluator {
     } else {
       return this.evaluateExpression(expression.whenFalse);
     }
+  }
+
+  private async evaluateNewExpression(expression: NewExpressionNode): Promise<RuntimeValue> {
+    const typeName = expression.typeName.name;
+
+    // First, check if it's a known type with a .NEW method
+    // Look for TypeName.NEW in host namespaces
+    const hostEntry = this.hostEnvironment.get(typeName);
+    if (hostEntry && isHostNamespace(hostEntry)) {
+      const newMethod = hostEntry.getMember('NEW');
+      if (newMethod && isHostFunction(newMethod)) {
+        // Evaluate arguments
+        const args = await Promise.all(
+          expression.args.map(arg => this.evaluateExpression(arg))
+        );
+        try {
+          return await newMethod.invoke(args, this.makeHostFunctionContext(expression.token));
+        } catch (error) {
+          throw this.wrapHostError(error, expression.token);
+        }
+      }
+    }
+
+    // If no .NEW method found, check if it's a user-defined type
+    const typeDeclaration = this.context.getVariable(`__type_${typeName}`);
+    if (typeDeclaration && typeof typeDeclaration === 'object' && typeDeclaration !== null) {
+
+      // For user-defined types, we'll create a default constructor
+      // that takes arguments in field declaration order
+
+      // For now, throw an error suggesting record literal syntax
+      throw new RuntimeError(
+        `Type '${typeName}' does not have a NEW constructor. Use record literal syntax: ${typeName} { field: value }`,
+        expression.token
+      );
+    }
+
+    // Check if it's a user-defined constructor function
+    const constructorFunc = this.context.getVariable(typeName);
+    if (constructorFunc && typeof constructorFunc === 'object' && constructorFunc !== null &&
+        'kind' in constructorFunc && constructorFunc.kind === 'user-function') {
+
+      // Call the constructor function
+      const args = await Promise.all(
+        expression.args.map(arg => this.evaluateExpression(arg))
+      );
+
+      const savedScope = this.context.saveScope();
+      return this.executeUserFunction(constructorFunc as any, args, expression.token, savedScope);
+    }
+
+    throw new RuntimeError(`Unknown type or constructor '${typeName}'`, expression.token);
   }
 
   private async evaluateMemberExpression(expression: MemberExpressionNode): Promise<RuntimeValue> {
@@ -1710,6 +1765,8 @@ class Evaluator {
       case 'ConditionalExpression':
         return expression.questionToken;
       case 'SpreadExpression':
+        return expression.token;
+      case 'NewExpression':
         return expression.token;
       default: {
         const exhaustiveCheck: never = expression;

@@ -35,7 +35,7 @@ PRINT "Press Ctrl+C to stop"
 PRINT
 
 REM Create animation canvas
-LET anim_canvas = CANVAS.CREATE(600, 400)
+LET anim_canvas = NEW CANVAS(600, 400)
 CANVAS.POSITION(anim_canvas, 100, 100)
 CANVAS.SHOW(anim_canvas)
 
