@@ -43,8 +43,17 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   }));
 
   env.register('LEN', createFunction('LEN', (args) => {
-    const str = requireStringArg('LEN', args, 0);
-    return str.length;
+    if (args.length !== 1) {
+      throw new Error(`LEN requires exactly 1 argument, got ${args.length}`);
+    }
+    const arg = args[0];
+    if (typeof arg === 'string') {
+      return arg.length;
+    }
+    if (Array.isArray(arg)) {
+      return arg.length;
+    }
+    throw new Error(`LEN argument #1 must be string or array, got ${typeof arg}`);
   }));
 
   // Classic BASIC math functions (global)

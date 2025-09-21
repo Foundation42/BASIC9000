@@ -1241,7 +1241,14 @@ class Evaluator {
         }
       } else {
         // Normal parameter - evaluate the expression
-        args.push(await this.evaluateExpression(argExpr));
+        if (argExpr.type === 'SpreadExpression') {
+          // Handle spread expressions
+          const target = await this.evaluateExpression(argExpr.target);
+          const spreadValues = this.expandSpreadValue(target, argExpr.token);
+          args.push(...spreadValues);
+        } else {
+          args.push(await this.evaluateExpression(argExpr));
+        }
       }
     }
 
