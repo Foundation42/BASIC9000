@@ -57,6 +57,7 @@ window.addEventListener('resize', () => {
 });
 
 let buffer = '';
+let cursorPos = 0; // Cursor position within the buffer
 const history = [];
 let historyIndex = -1;
 let executing = false;
@@ -104,12 +105,18 @@ function branch(fn) {
 function showPrompt() {
   term.write(`\r\n${PROMPT}`);
   buffer = '';
+  cursorPos = 0;
 }
 
 function renderInput() {
   // Clear the line and render with syntax highlighting
   const highlighted = highlighter.highlightLine(buffer);
   term.write(`\x1b[2K\r${PROMPT}${highlighted}`);
+
+  // Position cursor correctly within the line
+  const promptLength = PROMPT.length;
+  const targetCol = promptLength + cursorPos;
+  term.write(`\x1b[${targetCol + 1}G`); // Move to column (1-based)
 }
 
 function clearScreen() {
@@ -117,6 +124,7 @@ function clearScreen() {
   writeBanner();
   term.write(PROMPT);
   buffer = '';
+  cursorPos = 0;
 }
 
 function setStatus(text) {
@@ -147,6 +155,7 @@ async function executeBuffer() {
   const command = buffer.trim();
   term.write('\r\n');
   buffer = '';
+  cursorPos = 0;
 
   // Handle special RUN command for loading .bas files
   if (command.toUpperCase().startsWith('RUN ')) {
@@ -307,10 +316,12 @@ function handleHistory(direction) {
   } else if (historyIndex >= history.length) {
     historyIndex = history.length;
     buffer = '';
+    cursorPos = 0;
     renderInput();
     return;
   }
   buffer = history[historyIndex] ?? '';
+  cursorPos = buffer.length; // Position cursor at end when loading from history
   renderInput(); // This already uses the highlighter
 }
 
@@ -322,18 +333,67 @@ async function resetSession() {
   showPrompt();
 }
 
+// Helper functions for cursor and text manipulation
+function insertAtCursor(text) {
+  buffer = buffer.slice(0, cursorPos) + text + buffer.slice(cursorPos);
+  cursorPos += text.length;
+  renderInput();
+}
+
+function deleteAtCursor() {
+  if (cursorPos > 0) {
+    buffer = buffer.slice(0, cursorPos - 1) + buffer.slice(cursorPos);
+    cursorPos--;
+    renderInput();
+  }
+}
+
+function deleteForwardAtCursor() {
+  if (cursorPos < buffer.length) {
+    buffer = buffer.slice(0, cursorPos) + buffer.slice(cursorPos + 1);
+    renderInput();
+  }
+}
+
+function moveCursor(offset) {
+  cursorPos = Math.max(0, Math.min(buffer.length, cursorPos + offset));
+  renderInput();
+}
+
+function setCursor(pos) {
+  cursorPos = Math.max(0, Math.min(buffer.length, pos));
+  renderInput();
+}
+
+function findWordBoundary(forward) {
+  let pos = cursorPos;
+  if (forward) {
+    // Move to end of current word, then to start of next word
+    while (pos < buffer.length && /\S/.test(buffer[pos])) pos++;
+    while (pos < buffer.length && /\s/.test(buffer[pos])) pos++;
+  } else {
+    // Move to start of current word, then to start of previous word
+    if (pos > 0) pos--; // Step back if not at start
+    while (pos > 0 && /\s/.test(buffer[pos])) pos--;
+    while (pos > 0 && /\S/.test(buffer[pos - 1])) pos--;
+  }
+  return pos;
+}
+
 term.onData(async (data) => {
   if (executing) {
     return;
   }
 
+  // Handle single characters first
   switch (data) {
-    case '\r':
+    case '\r': // Enter
       await executeBuffer();
       return;
     case '\u0003': // Ctrl+C
       term.write('^C');
       buffer = '';
+      cursorPos = 0;
       showPrompt();
       return;
     case '\u000c': // Ctrl+L
@@ -348,29 +408,69 @@ term.onData(async (data) => {
       showPrompt();
       return;
     case '\u007f': // Backspace
-      if (buffer.length > 0) {
-        buffer = buffer.slice(0, -1);
-        renderInput();
-      }
+      deleteAtCursor();
       return;
-    case '\u001b[A':
-      handleHistory(-1);
+    case '\u0001': // Ctrl+A (Home)
+      setCursor(0);
       return;
-    case '\u001b[B':
-      handleHistory(1);
+    case '\u0005': // Ctrl+E (End)
+      setCursor(buffer.length);
       return;
-    default:
-      break;
+    case '\u0004': // Ctrl+D (Delete forward)
+      deleteForwardAtCursor();
+      return;
+    case '\u000b': // Ctrl+K (Delete to end of line)
+      buffer = buffer.slice(0, cursorPos);
+      renderInput();
+      return;
+    case '\u0015': // Ctrl+U (Delete to start of line)
+      buffer = buffer.slice(cursorPos);
+      cursorPos = 0;
+      renderInput();
+      return;
   }
 
+  // Handle escape sequences
+  if (data.startsWith('\u001b[')) {
+    switch (data) {
+      case '\u001b[A': // Up arrow
+        handleHistory(-1);
+        return;
+      case '\u001b[B': // Down arrow
+        handleHistory(1);
+        return;
+      case '\u001b[C': // Right arrow
+        moveCursor(1);
+        return;
+      case '\u001b[D': // Left arrow
+        moveCursor(-1);
+        return;
+      case '\u001b[H': // Home
+        setCursor(0);
+        return;
+      case '\u001b[F': // End
+        setCursor(buffer.length);
+        return;
+      case '\u001b[3~': // Delete
+        deleteForwardAtCursor();
+        return;
+      case '\u001b[1;5C': // Ctrl+Right (word forward)
+        setCursor(findWordBoundary(true));
+        return;
+      case '\u001b[1;5D': // Ctrl+Left (word backward)
+        setCursor(findWordBoundary(false));
+        return;
+    }
+  }
+
+  // Ignore other escape sequences
   if (data[0] === '\u001b') {
-    // Ignore other escape sequences for now.
     return;
   }
 
+  // Handle printable characters
   if (data >= ' ' && data <= '~') {
-    buffer += data;
-    renderInput();
+    insertAtCursor(data);
   }
 });
 
