@@ -3,6 +3,11 @@ REM BASIC9000 Boot Sequence
 REM Enhanced with Type System Features
 REM ========================================
 
+' Clear terminal and show boot overlay
+TERMINAL.CLEAR()
+TERMINAL.STATUS("Boot sequence engaged")
+TERMINAL.OVERLAY("BASIC9000 ONLINE", 2000)
+
 ' Boot sequence - enhanced with new type system
 
 ' Define system info type
