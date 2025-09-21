@@ -17,8 +17,8 @@ END FUNCTION
 
 REM Test 1: Basic SPAWN functionality
 PRINT "=== Test 1: Basic SPAWN ==="
-REM SPAWN should start a named routine
-SPAWN "worker1"
+REM SPAWN should start a named routine and return task handle
+LET worker1 = SPAWN "worker1"
 
 REM Test logging
 CALL LogMessage("Main thread started")
@@ -26,7 +26,6 @@ CALL LogMessage("Main thread started")
 REM Test 2: Message sending (now REAL!)
 PRINT "=== Test 2: SEND Messages ==="
 REM Real syntax for sending messages to spawned routines
-LET worker1 = __task_worker1  REM Get the task handle
 SEND worker1, "initialize"
 SEND worker1, "process data"
 SEND worker1, "shutdown"

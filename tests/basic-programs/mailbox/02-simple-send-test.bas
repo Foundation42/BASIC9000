@@ -1,7 +1,7 @@
 REM Simple SEND test
 PRINT "Testing SEND parsing"
 
-SPAWN "worker1"
+LET worker1 = SPAWN "worker1"
 PRINT "Spawned worker1"
 
 SEND worker1, "hello"
