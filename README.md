@@ -31,6 +31,7 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - 🔄 **REF Parameters**: Pass-by-reference for in-place modifications
 - 🎛️ **Default Parameters**: Functions with optional parameters
 - 📤 **Spread Operator**: Expand arrays and SPREAD-annotated records in function calls (`...array` or `array...`)
+- 🆕 **NEW Operator**: Elegant object construction with `NEW TypeName(args)` syntax
 
 #### Advanced Control Flow
 - 🛡️ **TRY/CATCH/FINALLY**: Modern error handling with structured exceptions
@@ -74,6 +75,12 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - Every mutating operation returns the handle for chaining
 - Write elegant, readable graphics code! ✨
 
+#### 🆕 **NEW Operator Magic**
+- **Modern construction**: `NEW CANVAS(400, 300)` and `NEW Point(10, 20)`
+- **Built-in objects**: Replaces verbose `.CREATE()` calls with elegant syntax
+- **Constructor functions**: Works with user-defined types seamlessly
+- **Perfect integration**: `NEW CANVAS(400, 300).COLOR("#ff0000").RECT(0, 0, 100, 100)`
+
 #### 🎨 **Syntax Highlighting Glow-Up**
 - **70+ new keywords** and functions now highlighted
 - All AI, MATH, CANVAS namespaces properly colorized
@@ -86,9 +93,10 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 - Clean terminal initialization sequence
 
 ### 📊 **By The Numbers:**
-- ✅ **81/81 tests passing** (100% success rate!)
-- 🎯 **5 major features** implemented and polished
+- ✅ **86/86 tests passing** (100% success rate!)
+- 🎯 **6 major features** implemented and polished
 - 🚀 **Modernized codebase** with legacy GOTO/GOSUB removed
+- 🆕 **NEW operator** brings object-oriented elegance to BASIC
 - 💚 **Cleaner, more maintainable** structured programming focus!
 
 **BASIC9000 is now more powerful than ever while maintaining that nostalgic charm!** 🏆
@@ -149,6 +157,13 @@ END TYPE
 
 ' Create instances with literal syntax
 LET user = Person { name: "Alice", age: 30, email: "alice@example.com" }
+
+' Or use constructor functions with NEW operator
+FUNCTION Person(name AS STRING, age AS NUMBER, email AS STRING) AS Person
+  RETURN Person { name: name, age: age, email: email }
+END FUNCTION
+
+LET user2 = NEW Person("Bob", 25, "bob@example.com")
 
 ' Direct field modification
 user.age = 31
