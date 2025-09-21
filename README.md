@@ -6,6 +6,8 @@ A retro-futuristic BASIC interpreter that bridges the nostalgia of 1980s computi
 
 ![Boot Screen](BOOT.png)
 
+![The Choice is Clear](MEME.png)
+
 ## ✨ Features
 
 ### Classic BASIC with Modern Power
