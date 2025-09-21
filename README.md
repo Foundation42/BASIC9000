@@ -282,6 +282,31 @@ LET joined$ = ARRAY.JOIN(items, ", ")
 LET length = ARRAY.LENGTH(items)
 ```
 
+#### Free Function UFCS
+BASIC9000 supports Uniform Function Call Syntax with function overloading, allowing method-like calls on any type:
+
+```basic
+FUNCTION Length(self AS Vector) AS NUMBER
+  RETURN SQR(self.x*self.x + self.y*self.y)
+END FUNCTION
+
+LET v = Vector { x: 3, y: 4 }
+PRINT v.Length()   ' == Length(v) → 5.0
+
+' Function overloading for different types
+FUNCTION Display(self AS Vector) AS STRING
+  RETURN "Vector(" + STR$(self.x) + "," + STR$(self.y) + ")"
+END FUNCTION
+
+FUNCTION Display(self AS Point) AS STRING
+  RETURN "Point(" + STR$(self.x) + "," + STR$(self.y) + ")"
+END FUNCTION
+
+' Type-safe dispatch
+PRINT v.Display()  ' → "Vector(3,4)"
+PRINT p.Display()  ' → "Point(5,6)"
+```
+
 ### Concurrent Programming
 ```basic
 ROUTINE weather_monitor

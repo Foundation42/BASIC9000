@@ -36,7 +36,8 @@ import type {
   NewExpressionNode,
   DeferStatementNode,
   DeferBlockStatementNode,
-  ContinueStatementNode
+  ContinueStatementNode,
+  ParameterNode
 } from './ast.js';
 import {
   HostEnvironment,
@@ -110,8 +111,15 @@ export class InterpreterSession {
   }
 }
 
+interface FunctionOverload {
+  func: UserFunctionValue;
+  signature: string;
+  parameterTypes: string[];
+}
+
 class ExecutionContext {
   private readonly variables = new Map<string, RuntimeValue>();
+  private readonly functions = new Map<string, FunctionOverload[]>(); // Function name -> overloads
   private readonly outputs: string[] = [];
   private currentPrintBuffer = '';
   private hasPendingBuffer = false;
@@ -177,6 +185,87 @@ class ExecutionContext {
   public hasVariable(name: string): boolean {
     const key = normalizeIdentifier(name);
     return this.variables.has(key);
+  }
+
+  private getParameterTypeSignature(parameters: readonly ParameterNode[]): string[] {
+    return parameters.map(param => {
+      if (param.typeAnnotation) {
+        return param.typeAnnotation.name;
+      }
+      // For untyped parameters, use default BASIC typing rules
+      const name = param.name.name;
+      if (name.endsWith('$')) return 'STRING';
+      if (name.endsWith('%')) return 'NUMBER';
+      return 'ANY'; // Default type
+    });
+  }
+
+  public registerFunction(func: UserFunctionValue): void {
+    const funcName = normalizeIdentifier(func.name);
+    const paramTypes = this.getParameterTypeSignature(func.parameters);
+    const signature = `${func.name}(${paramTypes.join(', ')})`;
+
+    const overload: FunctionOverload = {
+      func,
+      signature,
+      parameterTypes: paramTypes
+    };
+
+    if (!this.functions.has(funcName)) {
+      this.functions.set(funcName, []);
+    }
+
+    const overloads = this.functions.get(funcName)!;
+
+    // Check for exact duplicate signatures
+    const existingOverload = overloads.find(o =>
+      o.parameterTypes.length === paramTypes.length &&
+      o.parameterTypes.every((type, i) => type === paramTypes[i])
+    );
+
+    if (existingOverload) {
+      throw new Error(`Function '${signature}' is already defined`);
+    }
+
+    overloads.push(overload);
+
+    // For backwards compatibility, also store in variables map if it's the first overload
+    if (overloads.length === 1) {
+      this.variables.set(funcName, func);
+    }
+  }
+
+  public findBestFunction(name: string, argTypes: string[]): UserFunctionValue | undefined {
+    const funcName = normalizeIdentifier(name);
+    const overloads = this.functions.get(funcName);
+
+    if (!overloads || overloads.length === 0) {
+      return undefined;
+    }
+
+    // Find exact matches first
+    const exactMatches = overloads.filter(overload =>
+      overload.parameterTypes.length === argTypes.length &&
+      overload.parameterTypes.every((paramType, i) =>
+        paramType === 'ANY' || argTypes[i] === 'ANY' || paramType === argTypes[i]
+      )
+    );
+
+    if (exactMatches.length === 1) {
+      return exactMatches[0].func;
+    }
+
+    if (exactMatches.length > 1) {
+      const signatures = exactMatches.map(m => m.signature).join(', ');
+      throw new Error(`Ambiguous UFCS call '${name}' with receiver ${argTypes[0] || 'unknown'}; candidates: ${signatures}`);
+    }
+
+    // If no exact match, return the first overload for backwards compatibility
+    return overloads[0].func;
+  }
+
+  public getAllFunctionNames(): string[] {
+    return Array.from(this.functions.keys());
   }
 
   public saveScope(): Map<string, RuntimeValue> {
@@ -988,6 +1077,71 @@ class Evaluator {
     throw new RuntimeError(`Unknown type or constructor '${typeName}'`, expression.token);
   }
 
+  private levenshteinDistance(a: string, b: string): number {
+    const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+
+    for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+
+    for (let j = 1; j <= b.length; j++) {
+      for (let i = 1; i <= a.length; i++) {
+        const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,     // deletion
+          matrix[j - 1][i] + 1,     // insertion
+          matrix[j - 1][i - 1] + indicator  // substitution
+        );
+      }
+    }
+
+    return matrix[b.length][a.length];
+  }
+
+  private getRuntimeValueType(value: RuntimeValue): string {
+    if (typeof value === 'string') return 'STRING';
+    if (typeof value === 'number') return 'NUMBER';
+    if (typeof value === 'boolean') return 'BOOL';
+    if (Array.isArray(value)) return 'ARRAY';
+    if (isRecordValue(value)) return value.typeName;
+    if (typeof value === 'object' && value !== null && 'kind' in value) {
+      return (value as any).kind;
+    }
+    return 'ANY';
+  }
+
+  private getDidYouMeanSuggestion(methodName: string, objectTypeName: string): string {
+    const suggestions: string[] = [];
+
+    // Check user-defined functions
+    const allFunctionNames = this.context.getAllFunctionNames();
+    for (const name of allFunctionNames) {
+      const distance = this.levenshteinDistance(methodName.toLowerCase(), name.toLowerCase());
+      if (distance <= 2 && distance > 0) {
+        suggestions.push(name);
+      }
+    }
+
+    // Check host namespace functions
+    const hostEnvironments = ['CANVAS', 'MATH', 'STRING', 'ARRAY', 'HTTP', 'TIME', 'SYS'];
+    for (const nsName of hostEnvironments) {
+      const namespace = this.hostEnvironment.get(nsName);
+      if (namespace && isHostNamespace(namespace)) {
+        const members = (namespace as any).listMembers?.() || [];
+        for (const memberName of members) {
+          const distance = this.levenshteinDistance(methodName.toLowerCase(), memberName.toLowerCase());
+          if (distance <= 2 && distance > 0) {
+            suggestions.push(memberName);
+          }
+        }
+      }
+    }
+
+    if (suggestions.length > 0) {
+      return ` (did you mean: ${suggestions.slice(0, 3).join(', ')}?)`;
+    }
+    return '';
+  }
+
   private async evaluateMemberExpression(expression: MemberExpressionNode): Promise<RuntimeValue> {
     const objectValue = await this.evaluateExpression(expression.object);
 
@@ -1026,19 +1180,20 @@ class Evaluator {
       }
 
       // If not a field or property, check for UFCS - look for a function with this name
-      const funcValue = this.context.getVariable(fieldName);
-      if (funcValue && typeof funcValue === 'object' && funcValue !== null &&
-          'kind' in funcValue && funcValue.kind === 'user-function') {
+      const objectType = this.getRuntimeValueType(objectValue);
+      const bestFunction = this.context.findBestFunction(fieldName, [objectType]);
+      if (bestFunction) {
         // Return a bound function that will insert the object as the first argument
         return {
           kind: 'bound-function' as const,
-          func: funcValue as UserFunctionValue,
+          func: bestFunction,
           boundThis: objectValue
         };
       }
 
+      const didYouMean = this.getDidYouMeanSuggestion(fieldName, objectValue.typeName);
       throw new RuntimeError(
-        `Type '${objectValue.typeName}' has no field '${fieldName}'`,
+        `No function '${fieldName}' matches receiver type ${objectValue.typeName} (tried: field, free function, block)${didYouMean}`,
         expression.property.token
       );
     }
@@ -1046,14 +1201,14 @@ class Evaluator {
     // Try UFCS for any value - look for a function or host namespace member
     const memberName = expression.property.name;
 
-    // First check for user-defined functions
-    const funcValue = this.context.getVariable(memberName);
-    if (funcValue && typeof funcValue === 'object' && funcValue !== null &&
-        'kind' in funcValue && funcValue.kind === 'user-function') {
+    // First check for user-defined functions with overloading
+    const objectType = this.getRuntimeValueType(objectValue);
+    const bestFunction = this.context.findBestFunction(memberName, [objectType]);
+    if (bestFunction) {
       // Return a bound function that will insert the object as the first argument
       return {
         kind: 'bound-function' as const,
-        func: funcValue as UserFunctionValue,
+        func: bestFunction,
         boundThis: objectValue
       };
     }
@@ -1076,7 +1231,14 @@ class Evaluator {
       }
     }
 
-    throw new RuntimeError('Property access is not supported for this value', expression.property.token);
+    const objectTypeName = typeof objectValue === 'object' && objectValue !== null && 'typeName' in objectValue
+      ? objectValue.typeName as string
+      : typeof objectValue;
+    const didYouMean = this.getDidYouMeanSuggestion(memberName, objectTypeName);
+    throw new RuntimeError(
+      `No function '${memberName}' matches receiver type ${objectTypeName} (tried: field, free function, block)${didYouMean}`,
+      expression.property.token
+    );
   }
 
   private async evaluateIndexExpression(expression: IndexExpressionNode): Promise<RuntimeValue> {
@@ -1527,7 +1689,7 @@ class Evaluator {
 
 
   private async executeFunction(statement: FunctionStatementNode): Promise<undefined> {
-    // Store function definition in context
+    // Store function definition in context with overloading support
     const functionValue: UserFunctionValue = {
       kind: 'user-function',
       name: statement.name.name,
@@ -1536,12 +1698,12 @@ class Evaluator {
       body: statement.body,
       isAsync: false
     };
-    this.context.setVariable(statement.name.name, functionValue, statement.name.token);
+    this.context.registerFunction(functionValue);
     return undefined;
   }
 
   private async executeSub(statement: SubStatementNode): Promise<undefined> {
-    // Store sub definition in context
+    // Store sub definition in context with overloading support
     const subValue: UserFunctionValue = {
       kind: 'user-function',
       name: statement.name.name,
@@ -1551,7 +1713,7 @@ class Evaluator {
       isAsync: false,
       isSub: true
     };
-    this.context.setVariable(statement.name.name, subValue, statement.name.token);
+    this.context.registerFunction(subValue);
     return undefined;
   }
 
