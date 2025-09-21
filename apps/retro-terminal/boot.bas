@@ -4,9 +4,13 @@ REM Enhanced with Type System Features
 REM ========================================
 
 ' Clear terminal and show boot overlay
-TERMINAL.CLEAR()
-TERMINAL.STATUS("Boot sequence engaged")
-TERMINAL.OVERLAY("BASIC9000 ONLINE", 10000)
+TRY
+  TERMINAL.CLEAR()
+  TERMINAL.STATUS("Boot sequence engaged")
+  TERMINAL.OVERLAY("BASIC9000 ONLINE", 10000)
+CATCH e
+  REM Terminal functions not available in CLI mode
+END TRY
 
 ' Boot sequence - enhanced with new type system
 
@@ -51,6 +55,15 @@ PRINT "Type 'RUN demos/type-system-demo' to explore"
 PRINT "the new type system features!"
 PRINT
 
+' Initialize default AI instance
+TRY
+  LET ai = NEW AI()
+  PRINT "🤖 AI Assistant ready! Use: PRINT ai.GENERATE(" + CHR$(34) + "your prompt" + CHR$(34) + ")"
+CATCH e
+  PRINT "⚠ AI not configured - add API keys to .basic9000.json"
+END TRY
+PRINT
+
 ' Show a quick feature demo
 TYPE Feature
   name AS STRING
@@ -67,8 +80,9 @@ LET f6 = Feature { name: "Properties (GET/SET)", available: TRUE, version: "1.0"
 LET f7 = Feature { name: "WITH Blocks", available: TRUE, version: "1.0" }
 LET f8 = Feature { name: "Array Indexing [n]", available: TRUE, version: "1.0" }
 LET f9 = Feature { name: "Enhanced LEN()", available: TRUE, version: "1.0" }
-LET f10 = Feature { name: "100/100 Tests Passing", available: TRUE, version: "1.0" }
-LET features = [f1, f2, f3, f4, f5, f6, f7, f8, f9, f10]
+LET f10 = Feature { name: "AI Integration", available: TRUE, version: "1.0" }
+LET f11 = Feature { name: "114/114 Tests Passing", available: TRUE, version: "1.0" }
+LET features = [f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11]
 
 PRINT "New Features:"
 FOR i = 0 TO ARRAY.LENGTH(features) - 1
@@ -78,4 +92,8 @@ FOR i = 0 TO ARRAY.LENGTH(features) - 1
 NEXT i
 PRINT
 
-TERMINAL.STATUS("READY")
+TRY
+  TERMINAL.STATUS("READY")
+CATCH e
+  REM Terminal functions not available in CLI mode
+END TRY

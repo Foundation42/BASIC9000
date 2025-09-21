@@ -395,9 +395,21 @@ window.basic9000.boot().then(result => {
       });
     });
     term.writeln(''); // Add blank line after boot output
+  } else if (!result.ok) {
+    // Display boot errors to the user
+    term.writeln('\x1b[91m? Boot script error:\x1b[0m');
+    const errorText = String(result.error || 'Unknown boot error');
+    const lines = errorText.split('\n');
+    lines.forEach((line) => {
+      term.writeln(`? ${line}`);
+    });
+    term.writeln('');
   }
   term.write(PROMPT);
 }).catch(error => {
   console.error('Boot script failed:', error);
+  term.writeln('\x1b[91m? Boot script failed to load\x1b[0m');
+  term.writeln(`? ${error.message || error}`);
+  term.writeln('');
   term.write(PROMPT);
 });
