@@ -14,7 +14,7 @@ import {
   isHostNamespace,
   type HostNamespaceValue
 } from './host.js';
-import type { RuntimeValue } from './runtime-values.js';
+import { RuntimeRecordValue, isRecordValue, type RuntimeValue } from './runtime-values.js';
 
 export function createDefaultHostEnvironment(): HostEnvironment {
   const env = new HostEnvironment();
@@ -139,6 +139,7 @@ export function createDefaultHostEnvironment(): HostEnvironment {
   env.register('WS', createWebSocketNamespace());
   env.register('JSON', createJsonNamespace());
   env.register('AI', createAINamespace());
+  env.register('AIAssistant', createAssistantHelperNamespace());
   env.register('CANVAS', createCanvasNamespace());
   return env;
 }
@@ -215,6 +216,35 @@ function createMathNamespace() {
       const x2 = requireNumberArg('MATH.DISTANCE', args, 2);
       const y2 = requireNumberArg('MATH.DISTANCE', args, 3);
       return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    })
+  });
+}
+
+function createAssistantHelperNamespace() {
+  return createNamespace('AIAssistant', {
+    WITH: createFunction('AIAssistant.With', (args) => {
+      const self = args[0];
+      if (!isRecordValue(self) || self.typeName !== 'AIAssistant') {
+        throw new Error('AIAssistant.With receiver must be an AIAssistant record');
+      }
+
+      const overrides = args.length >= 2 ? args[1] : undefined;
+      if (overrides !== undefined && overrides !== null && !isRecordValue(overrides)) {
+        throw new Error('AIAssistant.With overrides must be a record literal');
+      }
+
+      const entries = new Map(self.entries());
+
+      if (isRecordValue(overrides)) {
+        for (const [key, value] of overrides.entries()) {
+          if (!entries.has(key)) {
+            throw new Error(`Unknown assistant field '${key}'`);
+          }
+          entries.set(key, value);
+        }
+      }
+
+      return new RuntimeRecordValue('AIAssistant', entries.entries());
     })
   });
 }

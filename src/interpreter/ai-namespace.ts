@@ -1,5 +1,6 @@
 import { createFunction, createNamespace } from './host.js';
 import { requireStringArg, requireNumberArg } from './host-defaults.js';
+import { RuntimeRecordValue, isRecordValue, type RuntimeValue } from './runtime-values.js';
 
 // Store for API keys
 const apiKeys = new Map<string, string>();
@@ -7,6 +8,9 @@ const apiKeys = new Map<string, string>();
 // Store for AI instances using numeric handles (like Canvas)
 const aiInstances = new Map<number, AIInstance>();
 let nextInstanceId = 1;
+
+// Track record-backed assistants without leaking references
+const recordInstances = new WeakMap<RuntimeRecordValue, AIInstance>();
 
 // Use the centralized config system
 function getConfigValue(key: string, fallback?: string): string | undefined {
@@ -41,6 +45,10 @@ interface AIConfig {
   presencePenalty?: number;
   systemPrompt?: string;
   endpoint?: string; // For custom OpenAI-compatible endpoints
+  cachePolicy?: string;
+  retryCount?: number;
+  timeout?: number;
+  costBudget?: number;
 }
 
 interface Message {
@@ -57,7 +65,7 @@ class AIInstance {
   private lastError?: string;
   private lastErrorCode?: number;
 
-  constructor(provider: string, model: string) {
+  constructor(provider: string, model: string, register = true) {
     this.id = nextInstanceId++;
     this.config = {
       provider,
@@ -71,12 +79,16 @@ class AIInstance {
       this.config.endpoint = 'https://api.openai.com/v1';
     } else if (provider === 'anthropic') {
       this.config.endpoint = 'https://api.anthropic.com/v1';
+    } else if (provider === 'ollama') {
+      this.config.endpoint = 'http://localhost:11434';
     } else if (provider === 'openai-compatible' || provider === 'generic') {
       // Endpoint must be set explicitly for generic providers
       this.config.endpoint = '';
     }
 
-    aiInstances.set(this.id, this);
+    if (register) {
+      aiInstances.set(this.id, this);
+    }
   }
 
   setEndpoint(endpoint: string) {
@@ -99,6 +111,14 @@ class AIInstance {
       this.messages[systemIndex].content = prompt;
     } else {
       this.messages.unshift({ role: 'system', content: prompt });
+    }
+  }
+
+  clearSystemPrompt() {
+    this.config.systemPrompt = undefined;
+    const systemIndex = this.messages.findIndex(m => m.role === 'system');
+    if (systemIndex >= 0) {
+      this.messages.splice(systemIndex, 1);
     }
   }
 
@@ -139,6 +159,14 @@ class AIInstance {
   private async callAPI(messages: Message[], maxTokens?: number): Promise<string> {
     const provider = this.config.provider;
 
+    if (provider === 'fake') {
+      return this.callFakeAPI(messages, maxTokens);
+    }
+
+    if (provider === 'ollama') {
+      return this.callOllamaAPI(messages, maxTokens);
+    }
+
     if (provider === 'openai' || provider === 'openai-compatible' || provider === 'generic') {
       return this.callOpenAIAPI(messages, maxTokens);
     } else if (provider === 'anthropic') {
@@ -146,6 +174,81 @@ class AIInstance {
     } else {
       throw new Error(`Unsupported AI provider: ${provider}`);
     }
+  }
+
+  private async callFakeAPI(messages: Message[], _maxTokens?: number): Promise<string> {
+    const prompt = [...messages].reverse().find(m => m.role === 'user')?.content ?? '';
+    const hash = deterministicHash(prompt);
+
+    if (/TRIGGER_PARSE_ERROR/i.test(prompt)) {
+      return '{"summary":"OK","bullets"'; // intentionally malformed JSON
+    }
+
+    if (/Return JSON/i.test(prompt) && /summary/i.test(prompt) && /bullets/i.test(prompt)) {
+      const bullets = ['A', 'B', 'C', 'D', 'E'];
+      const count = Math.min(5, Math.max(2, (hash % 5) + 1));
+      const payload = {
+        summary: 'OK',
+        bullets: bullets.slice(0, count)
+      };
+      const json = JSON.stringify(payload);
+      this.requestCount++;
+      this.totalTokens += approximateTokenCount(prompt) + approximateTokenCount(json);
+      return json;
+    }
+
+    if (/number/i.test(prompt) && /-1/i.test(prompt) && /1/i.test(prompt)) {
+      this.requestCount++;
+      this.totalTokens += approximateTokenCount(prompt) + 1;
+      return '0';
+    }
+
+    const title = `TITLE:${hash % 10000}`;
+    this.requestCount++;
+    this.totalTokens += approximateTokenCount(prompt) + approximateTokenCount(title);
+    return title;
+  }
+
+  private async callOllamaAPI(messages: Message[], maxTokens?: number): Promise<string> {
+    const endpoint = this.config.endpoint || 'http://localhost:11434';
+    const url = `${endpoint.replace(/\/$/, '')}/api/chat`;
+
+    const ollamaMessages = messages.map(m => ({
+      role: m.role,
+      content: m.content
+    }));
+
+    const body: Record<string, unknown> = {
+      model: this.config.model,
+      messages: ollamaMessages,
+      stream: false,
+      options: {
+        temperature: this.config.temperature,
+        num_predict: maxTokens ?? this.config.maxTokens
+      }
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      this.lastErrorCode = response.status;
+      throw new Error(`Ollama API error (${response.status}): ${error}`);
+    }
+
+    const data = await response.json();
+    const content: string = data?.message?.content ?? '';
+    this.requestCount++;
+    const promptTokens = approximateTokenCount(JSON.stringify(ollamaMessages));
+    const responseTokens = approximateTokenCount(content);
+    this.totalTokens += promptTokens + responseTokens;
+    return content;
   }
 
   private async callOpenAIAPI(messages: Message[], maxTokens?: number): Promise<string> {
@@ -301,6 +404,105 @@ function findInstance(handle: any): AIInstance {
   return instance;
 }
 
+function isAssistantRecordValue(value: RuntimeValue): value is RuntimeRecordValue {
+  return isRecordValue(value) && value.typeName === 'AIAssistant';
+}
+
+function normalizeProviderId(provider?: string): string {
+  if (!provider || provider.length === 0) {
+    return defaultConfig.provider;
+  }
+  const normalized = provider.toLowerCase();
+  return normalized === 'generic' ? 'openai-compatible' : normalized;
+}
+
+function getRecordString(record: RuntimeRecordValue, field: string): string | undefined {
+  const value = record.get(field);
+  if (typeof value === 'string') {
+    return value;
+  }
+  return undefined;
+}
+
+function getRecordNumber(record: RuntimeRecordValue, field: string): number | undefined {
+  const value = record.get(field);
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function syncRecordInstance(record: RuntimeRecordValue): AIInstance {
+  const provider = normalizeProviderId(getRecordString(record, 'Provider'));
+  const model = getRecordString(record, 'Model') ?? defaultConfig.model;
+
+  let instance = recordInstances.get(record);
+  if (!instance || instance.config.provider !== provider || instance.config.model !== model) {
+    instance = new AIInstance(provider, model, false);
+    recordInstances.set(record, instance);
+  }
+
+  instance.config.provider = provider;
+  instance.config.model = model;
+
+  const temperature = getRecordNumber(record, 'Temperature');
+  instance.setTemperature(typeof temperature === 'number' ? temperature : defaultConfig.temperature);
+
+  const maxTokens = getRecordNumber(record, 'MaxTokens');
+  instance.setMaxTokens(typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : defaultConfig.maxTokens);
+
+  const systemPrompt = getRecordString(record, 'SystemPrompt');
+  if (systemPrompt && systemPrompt.length > 0) {
+    instance.setSystemPrompt(systemPrompt);
+  } else {
+    instance.clearSystemPrompt();
+  }
+
+  const cachePolicy = getRecordString(record, 'CachePolicy');
+  instance.config.cachePolicy = cachePolicy && cachePolicy.length > 0 ? cachePolicy : undefined;
+
+  const retryCount = getRecordNumber(record, 'RetryCount');
+  instance.config.retryCount = typeof retryCount === 'number' ? retryCount : defaultConfig.retryCount;
+
+  const timeout = getRecordNumber(record, 'Timeout');
+  instance.config.timeout = typeof timeout === 'number' && timeout > 0 ? timeout : defaultConfig.timeout;
+
+  const costBudget = getRecordNumber(record, 'CostBudget');
+  instance.config.costBudget = typeof costBudget === 'number' && costBudget >= 0 ? costBudget : undefined;
+
+  return instance;
+}
+
+function resolveAssistant(value: RuntimeValue): { instance: AIInstance; record?: RuntimeRecordValue } {
+  if (typeof value === 'number') {
+    return { instance: findInstance(value) };
+  }
+
+  if (isAssistantRecordValue(value)) {
+    return { instance: syncRecordInstance(value), record: value };
+  }
+
+  throw new Error('AI assistant reference must be a handle or AIAssistant record');
+}
+
+function deterministicHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function approximateTokenCount(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
 export function createAINamespace() {
   return createNamespace('AI', {
     // Instance creation with auto-detection (returns numeric handle like Canvas)
@@ -314,17 +516,16 @@ export function createAINamespace() {
         model = defaultConfig.model;
       } else if (args.length === 1) {
         // Auto-detect model from config/environment for given provider
-        provider = requireStringArg('AI.NEW', args, 0).toLowerCase();
+        provider = requireStringArg('AI.NEW', args, 0);
         const providerModel = getConfigValue(`ai.${provider}.model`, getConfigValue(`AI_${provider.toUpperCase()}_MODEL`));
         model = providerModel || defaultConfig.model;
       } else {
         // Both provider and model specified
-        provider = requireStringArg('AI.NEW', args, 0).toLowerCase();
+        provider = requireStringArg('AI.NEW', args, 0);
         model = requireStringArg('AI.NEW', args, 1);
       }
 
-      // Support "generic" as an alias for "openai-compatible"
-      const normalizedProvider = provider === 'generic' ? 'openai-compatible' : provider;
+      const normalizedProvider = normalizeProviderId(provider);
 
       const instance = new AIInstance(normalizedProvider, model);
 
@@ -347,28 +548,37 @@ export function createAINamespace() {
 
     // Instance configuration (takes handle as first argument)
     TEMPERATURE: createFunction('AI.TEMPERATURE', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance, record } = resolveAssistant(args[0]);
       const temp = requireNumberArg('AI.TEMPERATURE', args, 1);
       instance.setTemperature(temp);
+      if (record) {
+        record.set('Temperature', temp);
+      }
       return temp;
     }),
 
     MAX_TOKENS: createFunction('AI.MAX_TOKENS', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance, record } = resolveAssistant(args[0]);
       const tokens = requireNumberArg('AI.MAX_TOKENS', args, 1);
       instance.setMaxTokens(tokens);
+      if (record) {
+        record.set('MaxTokens', tokens);
+      }
       return tokens;
     }),
 
     SYSTEM: createFunction('AI.SYSTEM', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance, record } = resolveAssistant(args[0]);
       const prompt = requireStringArg('AI.SYSTEM', args, 1);
       instance.setSystemPrompt(prompt);
+      if (record) {
+        record.set('SystemPrompt', prompt);
+      }
       return 0;
     }),
 
     ENDPOINT: createFunction('AI.ENDPOINT', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const endpoint = requireStringArg('AI.ENDPOINT', args, 1);
       instance.setEndpoint(endpoint);
       return 0;
@@ -376,7 +586,7 @@ export function createAINamespace() {
 
     // Text generation (takes handle as first argument)
     GENERATE: createFunction('AI.GENERATE', async (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const prompt = requireStringArg('AI.GENERATE', args, 1);
       const maxTokens = args.length >= 3 ? requireNumberArg('AI.GENERATE', args, 2) : undefined;
       return await instance.generate(prompt, maxTokens);
@@ -384,75 +594,93 @@ export function createAINamespace() {
 
     // Conversation management (takes handle as first argument)
     USER: createFunction('AI.USER', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const message = requireStringArg('AI.USER', args, 1);
       instance.addUserMessage(message);
       return 0;
     }),
 
     ASSISTANT: createFunction('AI.ASSISTANT', async (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       return await instance.assistant();
     }),
 
     HISTORY: createFunction('AI.HISTORY', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const history = instance.getHistory();
       return history.map(m => `${m.role}: ${m.content}`);
     }),
 
     // Instance lifecycle (takes handle as first argument)
     RESET: createFunction('AI.RESET', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance, record } = resolveAssistant(args[0]);
       instance.reset();
+      if (record) {
+        recordInstances.delete(record);
+      }
       return 0;
     }),
 
     DESTROY: createFunction('AI.DESTROY', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance, record } = resolveAssistant(args[0]);
       instance.destroy();
+      if (record) {
+        recordInstances.delete(record);
+      }
       return 0;
     }),
 
     // Instance information (takes handle as first argument)
     MODEL: createFunction('AI.MODEL', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance, record } = resolveAssistant(args[0]);
+      if (record) {
+        const model = getRecordString(record, 'Model');
+        if (model && model.length > 0) {
+          return model;
+        }
+      }
       return instance.config?.model || '';
     }),
 
     PROVIDER: createFunction('AI.PROVIDER', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance, record } = resolveAssistant(args[0]);
+      if (record) {
+        const provider = getRecordString(record, 'Provider');
+        if (provider && provider.length > 0) {
+          return provider;
+        }
+      }
       return instance.config?.provider || '';
     }),
 
     TOKENS: createFunction('AI.TOKENS', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       return instance.getTokens();
     }),
 
     REQUESTS: createFunction('AI.REQUESTS', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       return instance.getRequests();
     }),
 
     ERROR: createFunction('AI.ERROR', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       return instance.getError() ? 1 : 0;
     }),
 
     ERRORMSG: createFunction('AI.ERRORMSG', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       return instance.getError() || '';
     }),
 
     ERRORCODE: createFunction('AI.ERRORCODE', (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       return instance.getErrorCode() || 0;
     }),
 
     // Specialized operations (takes handle as first argument)
     TRANSLATE: createFunction('AI.TRANSLATE', async (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const text = requireStringArg('AI.TRANSLATE', args, 1);
       const targetLang = requireStringArg('AI.TRANSLATE', args, 2);
       const prompt = `Translate the following text to ${targetLang}. Only provide the translation, no explanations:\n\n${text}`;
@@ -460,7 +688,7 @@ export function createAINamespace() {
     }),
 
     SUMMARIZE: createFunction('AI.SUMMARIZE', async (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const text = requireStringArg('AI.SUMMARIZE', args, 1);
       const maxWords = args.length >= 3 ? requireNumberArg('AI.SUMMARIZE', args, 2) : 100;
       const prompt = `Summarize the following text in approximately ${maxWords} words:\n\n${text}`;
@@ -468,7 +696,7 @@ export function createAINamespace() {
     }),
 
     SENTIMENT: createFunction('AI.SENTIMENT', async (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const text = requireStringArg('AI.SENTIMENT', args, 1);
       const prompt = `Analyze the sentiment of the following text and respond with ONLY a number between -1 (very negative) and 1 (very positive):\n\n${text}`;
       const result = await instance.generate(prompt);
@@ -477,14 +705,14 @@ export function createAINamespace() {
     }),
 
     CODE: createFunction('AI.CODE', async (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const request = requireStringArg('AI.CODE', args, 1);
       const prompt = `Write code for the following request. Provide ONLY the code without explanations:\n\n${request}`;
       return await instance.generate(prompt);
     }),
 
     EXPLAIN: createFunction('AI.EXPLAIN', async (args) => {
-      const instance = findInstance(args[0]);
+      const { instance } = resolveAssistant(args[0]);
       const code = requireStringArg('AI.EXPLAIN', args, 1);
       const prompt = `Explain what this code does in simple terms:\n\n${code}`;
       return await instance.generate(prompt);

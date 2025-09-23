@@ -108,6 +108,96 @@ LET v = Vector { x: 1 }
     expect(result.outputs).toEqual(['GET:https://example.com']);
   });
 
+  it('constructs AIAssistant records with sensible defaults', async () => {
+    const program = `
+LET assistant = NEW AIAssistant("fake", "deterministic")
+PRINT assistant.Provider
+PRINT assistant.Model
+PRINT assistant.Temperature
+PRINT assistant.MaxTokens
+PRINT assistant.CachePolicy
+PRINT assistant.RetryCount
+PRINT assistant.Timeout
+PRINT assistant.CostBudget
+`;
+    const result = await run(program.trim());
+    expect(result.outputs).toEqual([
+      'fake',
+      'deterministic',
+      '0.7',
+      '1000',
+      'none',
+      '3',
+      '30000',
+      '0'
+    ]);
+  });
+
+  it('produces non-mutating overrides with assistant.With', async () => {
+    const program = `
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET fast = assistant.With({ Temperature:0.2, CachePolicy:"ttl:60" })
+PRINT assistant.Temperature
+PRINT fast.Temperature
+PRINT fast.CachePolicy
+PRINT assistant.CachePolicy
+`;
+    const result = await run(program.trim());
+    expect(result.outputs).toEqual(['0.7', '0.2', 'ttl:60', 'none']);
+  });
+
+  it('keeps record fields in sync when using AI.SYSTEM', async () => {
+    const program = `
+LET assistant = NEW AIAssistant("fake", "deterministic")
+AI.SYSTEM(assistant, "You are helpful")
+PRINT assistant.SystemPrompt
+`;
+    const result = await run(program.trim());
+    expect(result.outputs).toEqual(['You are helpful']);
+  });
+
+  it('produces deterministic responses with FakeAI provider', async () => {
+    const program = `
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET first$ = AI.GENERATE(assistant, "Give a concise title for this text")
+LET second$ = AI.GENERATE(assistant, "Give a concise title for this text")
+IF first$ <> second$ THEN PRINT "FAIL: nondeterministic"
+PRINT first$
+`;
+    const result = await run(program.trim());
+    expect(result.outputs.at(-1)).toMatch(/^TITLE:\d{1,4}$/);
+    expect(result.outputs).not.toContain('FAIL: nondeterministic');
+  });
+
+  it('returns structured JSON when prompted via FakeAI', async () => {
+    const program = `
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET raw$ = AI.GENERATE(assistant, "Return JSON: { summary, bullets } with at most 5 bullets.")
+LET handle = JSON.PARSE(raw$)
+LET summary$ = JSON.GET(handle, "summary")
+LET bullets = JSON.GET(handle, "bullets")
+IF summary$ <> "OK" THEN PRINT "FAIL: bad summary"
+IF LEN(bullets) = 0 THEN PRINT "FAIL: empty bullets"
+PRINT summary$
+`;
+    const result = await run(program.trim());
+    expect(result.outputs).toContain('OK');
+    expect(result.outputs).not.toContain('FAIL: bad summary');
+  });
+
+  if (process.env.OLLAMA_TEST === '1') {
+    it('integrates with local Ollama provider', async () => {
+      const program = `
+LET assistant = NEW AIAssistant("ollama", "gemma3n:latest")
+LET response$ = AI.GENERATE(assistant, "Reply with a two-word greeting.")
+PRINT LEN(response$)
+`;
+      const result = await run(program.trim());
+      const length = Number(result.outputs.at(-1));
+      expect(length).toBeGreaterThan(0);
+    });
+  }
+
   it('passes execution context to host functions', async () => {
     const hostEnv = new HostEnvironment({
       SYS: createNamespace('SYS', {

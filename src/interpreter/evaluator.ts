@@ -52,7 +52,7 @@ import {
 import { createDefaultHostEnvironment } from './host-defaults.js';
 import { RuntimeRecordValue, RefValue, TaskValue, isRecordValue, isTaskValue, type RuntimeValue, type UserFunctionValue, type BoundFunctionValue } from './runtime-values.js';
 import { parseSource, type ParserOptions } from './parser.js';
-import type { Token } from './tokenizer.js';
+import { TokenType, type Token } from './tokenizer.js';
 
 export interface ExecutionOptions {
   readonly maxSteps?: number;
@@ -134,7 +134,9 @@ class ExecutionContext {
   private currentTask: TaskValue | null = null; // Current executing task for RECV
   public deferStack: Array<{ type: 'statement', statement: StatementNode } | { type: 'block', statements: StatementNode[] }> = [];
 
-  constructor(private readonly options: ExecutionOptions = {}) {}
+  constructor(private readonly options: ExecutionOptions = {}) {
+    this.registerBuiltInTypes();
+  }
 
   public getVariable(name: string): RuntimeValue {
     const key = normalizeIdentifier(name);
@@ -381,6 +383,7 @@ class ExecutionContext {
     this.tasks.clear();
     this.taskIdCounter = 0;
     this.currentTask = null;
+    this.registerBuiltInTypes();
   }
 
   public spawnRoutine(name: string): boolean {
@@ -455,6 +458,55 @@ class ExecutionContext {
 
   public getTypeDefinition(name: string): RuntimeTypeDefinition | undefined {
     return this.types.get(name);
+  }
+
+  private registerBuiltInTypes(): void {
+    this.registerAIAssistantType();
+  }
+
+  private registerAIAssistantType(): void {
+    if (this.types.has('AIAssistant')) {
+      return;
+    }
+
+    const createToken = (lexeme: string): Token => ({
+      type: TokenType.Identifier,
+      lexeme,
+      literal: lexeme,
+      line: 0,
+      column: 0
+    });
+
+    const createAnnotation = (name: string, typeArguments?: readonly TypeAnnotationNode[]): TypeAnnotationNode => ({
+      type: 'TypeAnnotation',
+      name,
+      token: createToken(name),
+      ...(typeArguments ? { typeArguments: [...typeArguments] } : {})
+    });
+
+    const fields: RuntimeTypeField[] = [
+      { name: 'Provider', annotation: createAnnotation('STRING') },
+      { name: 'Model', annotation: createAnnotation('STRING') },
+      { name: 'Temperature', annotation: createAnnotation('NUMBER') },
+      { name: 'MaxTokens', annotation: createAnnotation('NUMBER') },
+      { name: 'SystemPrompt', annotation: createAnnotation('STRING') },
+      { name: 'CachePolicy', annotation: createAnnotation('STRING') },
+      { name: 'RetryCount', annotation: createAnnotation('NUMBER') },
+      { name: 'Timeout', annotation: createAnnotation('NUMBER') },
+      { name: 'CostBudget', annotation: createAnnotation('NUMBER') }
+    ];
+
+    const fieldOrder = fields.map(field => field.name);
+    const fieldMap = new Map<string, RuntimeTypeField>();
+    for (const field of fields) {
+      fieldMap.set(field.name, field);
+    }
+
+    this.types.set('AIAssistant', {
+      name: 'AIAssistant',
+      fieldOrder,
+      fields: fieldMap
+    });
   }
 }
 
@@ -1195,17 +1247,29 @@ class Evaluator {
     }
 
     // If no .NEW method found, check if it's a user-defined type
-    const typeDeclaration = this.context.getVariable(`__type_${typeName}`);
-    if (typeDeclaration && typeof typeDeclaration === 'object' && typeDeclaration !== null) {
+    const typeDefinition = this.context.getTypeDefinition(typeName);
+    if (typeDefinition) {
+      const args = await Promise.all(expression.args.map(arg => this.evaluateExpression(arg)));
+      if (args.length > typeDefinition.fieldOrder.length) {
+        throw new RuntimeError(
+          `Type '${typeName}' constructor expected at most ${typeDefinition.fieldOrder.length} argument(s), got ${args.length}`,
+          expression.token
+        );
+      }
 
-      // For user-defined types, we'll create a default constructor
-      // that takes arguments in field declaration order
+      const ordered: [string, RuntimeValue][] = [];
+      typeDefinition.fieldOrder.forEach((fieldName, index) => {
+        const field = typeDefinition.fields.get(fieldName);
+        if (!field) {
+          return;
+        }
+        const value = index < args.length
+          ? args[index]!
+          : defaultValueForField(typeDefinition.name, fieldName, field.annotation);
+        ordered.push([fieldName, value]);
+      });
 
-      // For now, throw an error suggesting record literal syntax
-      throw new RuntimeError(
-        `Type '${typeName}' does not have a NEW constructor. Use record literal syntax: ${typeName} { field: value }`,
-        expression.token
-      );
+      return new RuntimeRecordValue(typeName, ordered);
     }
 
     // Check if it's a user-defined constructor function
@@ -1337,6 +1401,18 @@ class Evaluator {
           func: bestFunction,
           boundThis: objectValue
         };
+      }
+
+      const namespaces = this.hostEnvironment.getAllNamespaces();
+      for (const namespace of namespaces) {
+        const member = namespace.getMember(fieldName);
+        if (member && typeof member === 'object' && member !== null && 'kind' in member && member.kind === 'host-function') {
+          return {
+            kind: 'bound-host-function' as const,
+            func: member as any,
+            boundThis: objectValue
+          };
+        }
       }
 
       const didYouMean = this.getDidYouMeanSuggestion(fieldName, objectValue.typeName);
@@ -2362,6 +2438,47 @@ export function coerceValueForIdentifier(name: string, value: RuntimeValue, toke
     return value;
   }
   return value;
+}
+
+const AI_ASSISTANT_FIELD_DEFAULTS: Record<string, RuntimeValue> = {
+  Provider: '',
+  Model: '',
+  Temperature: 0.7,
+  MaxTokens: 1000,
+  SystemPrompt: '',
+  CachePolicy: 'none',
+  RetryCount: 3,
+  Timeout: 30000,
+  CostBudget: 0
+};
+
+function defaultValueForField(typeName: string, fieldName: string, annotation: TypeAnnotationNode): RuntimeValue {
+  if (typeName === 'AIAssistant' && fieldName in AI_ASSISTANT_FIELD_DEFAULTS) {
+    return AI_ASSISTANT_FIELD_DEFAULTS[fieldName]!;
+  }
+  return defaultValueForTypeAnnotation(annotation);
+}
+
+function defaultValueForTypeAnnotation(annotation: TypeAnnotationNode): RuntimeValue {
+  const typeName = annotation.name.toUpperCase();
+
+  switch (typeName) {
+    case 'STRING':
+      return '';
+    case 'NUMBER':
+      return 0;
+    case 'BOOL':
+    case 'BOOLEAN':
+      return false;
+    case 'ARRAY':
+      return [];
+    case 'RECORD':
+      return new RuntimeRecordValue('Object', []);
+    case 'ANY':
+      return null;
+    default:
+      return null;
+  }
 }
 
 function runtimeValueToString(value: RuntimeValue): string {
