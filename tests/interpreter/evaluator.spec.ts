@@ -292,6 +292,50 @@ PRINT result.summary
     await expect(run(program.trim())).rejects.toThrow(/AIParseError/);
   });
 
+  it('rejects unexpected record fields without ALLOW_EXTRA', async () => {
+    const program = `
+TYPE Summary
+  summary AS STRING
+  bullets AS ARRAY<STRING>
+END TYPE
+
+AIFUNC assistant.StrictSummary(text AS STRING) AS Summary
+  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets. EXTRA_FIELD\\n\${text}"
+  EXPECT { bullets: LENGTH 1..5 }
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET result = assistant.StrictSummary("Release notes")
+PRINT result.summary
+`;
+
+    await expect(run(program.trim())).rejects.toThrow(/Unexpected field/);
+  });
+
+  it('allows additional record fields when EXPECT { ALLOW_EXTRA } is present', async () => {
+    const program = `
+TYPE Summary
+  summary AS STRING
+  bullets AS ARRAY<STRING>
+END TYPE
+
+AIFUNC assistant.LooseSummary(text AS STRING) AS Summary
+  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets. EXTRA_FIELD\\n\${text}"
+  EXPECT { ALLOW_EXTRA, bullets: LENGTH 1..5 }
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET result = assistant.LooseSummary("Release notes")
+PRINT result.summary
+PRINT LEN(result.bullets)
+`;
+
+    const result = await run(program.trim());
+    expect(result.outputs[0]).toBe('OK');
+    const bulletCount = Number(result.outputs[1]);
+    expect(bulletCount).toBeGreaterThan(0);
+  });
+
   if (process.env.OLLAMA_TEST === '1') {
     it('integrates with local Ollama provider', async () => {
       const program = `

@@ -425,7 +425,8 @@ export interface AIFuncExpectNode {
 export type AIFuncExpectClause =
   | AIFuncNumberRangeClause
   | AIFuncLengthClause
-  | AIFuncRecordConstraintClause;
+  | AIFuncRecordConstraintClause
+  | AIFuncAllowExtraClause;
 
 export interface AIFuncNumberRangeClause {
   readonly kind: 'number-range';
@@ -443,4 +444,8 @@ export interface AIFuncRecordConstraintClause {
   readonly kind: 'record';
   readonly field: string;
   readonly constraint: AIFuncLengthClause;
+}
+
+export interface AIFuncAllowExtraClause {
+  readonly kind: 'allow-extra';
 }

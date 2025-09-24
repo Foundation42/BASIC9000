@@ -191,6 +191,9 @@ class AIInstance {
         summary: 'OK',
         bullets: bullets.slice(0, count)
       };
+      if (/EXTRA_FIELD/i.test(prompt)) {
+        (payload as Record<string, unknown>).extra = 'EXTRA';
+      }
       const json = JSON.stringify(payload);
       this.requestCount++;
       this.totalTokens += approximateTokenCount(prompt) + approximateTokenCount(json);

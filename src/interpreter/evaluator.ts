@@ -2352,7 +2352,7 @@ class Evaluator {
 
     const rawResult = await this.invokeCallable(generateEntry as RuntimeValue, [workingAssistant, prompt], token);
     const stringResult = typeof rawResult === 'string' ? rawResult : runtimeValueToString(rawResult);
-    const coerced = this.coerceAIFuncResult(stringResult, meta.returnType, token);
+    const coerced = this.coerceAIFuncResult(stringResult, meta.returnType, meta.expect, token);
     this.validateAIFuncExpect(meta.expect, coerced, meta.returnType, stringResult, token);
     return coerced;
   }
@@ -2383,7 +2383,12 @@ class Evaluator {
     return clone;
   }
 
-  private coerceAIFuncResult(raw: string, returnType: TypeAnnotationNode | undefined, token: Token): RuntimeValue {
+  private coerceAIFuncResult(
+    raw: string,
+    returnType: TypeAnnotationNode | undefined,
+    expect: AIFuncExpectNode | undefined,
+    token: Token
+  ): RuntimeValue {
     if (!returnType) {
       return raw;
     }
@@ -2437,7 +2442,8 @@ class Evaluator {
     const typeDefinition = this.context.getTypeDefinition(returnType.name);
     if (typeDefinition) {
       const parsed = this.parseJsonValue(raw, token);
-      return this.coerceJsonRecord(parsed, typeDefinition, token);
+      const allowExtra = expect?.clauses.some((clause) => clause.kind === 'allow-extra') ?? false;
+      return this.coerceJsonRecord(parsed, typeDefinition, token, allowExtra);
     }
 
     throw new RuntimeError(`AIFUNC return type '${returnType.name}' is not supported yet`, token);
@@ -2520,7 +2526,12 @@ class Evaluator {
     throw new RuntimeError(`AIFUNC return type '${annotation.name}' is not supported yet`, token);
   }
 
-  private coerceJsonRecord(value: unknown, typeDefinition: RuntimeTypeDefinition, token: Token): RuntimeRecordValue {
+  private coerceJsonRecord(
+    value: unknown,
+    typeDefinition: RuntimeTypeDefinition,
+    token: Token,
+    allowExtra = false
+  ): RuntimeRecordValue {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
       throw new RuntimeError(`AIParseError: Expected JSON object for record '${typeDefinition.name}'`, token);
     }
@@ -2546,12 +2557,14 @@ class Evaluator {
       entries.push([fieldName, coerced]);
     }
 
-    for (const key of Object.keys(objectValue)) {
-      if (!typeDefinition.fields.has(key)) {
-        throw new RuntimeError(
-          `AIParseError: Unexpected field '${key}' in record '${typeDefinition.name}'`,
-          token
-        );
+    if (!allowExtra) {
+      for (const key of Object.keys(objectValue)) {
+        if (!typeDefinition.fields.has(key)) {
+          throw new RuntimeError(
+            `AIParseError: Unexpected field '${key}' in record '${typeDefinition.name}'`,
+            token
+          );
+        }
       }
     }
 

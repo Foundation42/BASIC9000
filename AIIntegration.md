@@ -280,6 +280,7 @@ Every call is a tuple frame (see `TUPLE.md`):
 * Missing field → error; type mismatch → error.
 * Partial constraints apply only to listed fields.
 * `LENGTH` inside records works for string or array fields; other types raise `AIParseError`.
+* Add `ALLOW_EXTRA` inside `EXPECT { ... }` to permit provider-supplied fields beyond the declared record shape.
 
 **ANY**
 
@@ -318,6 +319,12 @@ AIFUNC assistant.Summarize(text AS STRING) AS Summary
   PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\n\n${text}"
   EXPECT { summary: LENGTH 1..160, bullets: LENGTH 0..5 }
 END AIFUNC
+```
+
+Add `ALLOW_EXTRA` inside the record constraint when providers tack on metadata fields you want to tolerate:
+
+```basic
+  EXPECT { ALLOW_EXTRA, summary: LENGTH 1..160, bullets: LENGTH 0..5 }
 ```
 
 ### 6.4 Per‑call overrides without mutation
@@ -380,8 +387,8 @@ ExpectClause := NumberRange | LengthRange | Regex | RecordConstraint
 NumberRange  := 'RANGE' '[' Number ',' Number ']'
 LengthRange  := 'LENGTH' (Number | Number '..' Number)
 Regex        := 'MATCH' '/' <regex> '/'
-RecordConstraint := '{' FieldConstraint { ',' FieldConstraint } '}'
-FieldConstraint  := Identifier ':' (LengthRange | Regex | NumberRange | 'ALLOW_EXTRA')
+RecordConstraint := '{' RecordFieldConstraint { ',' RecordFieldConstraint } '}'
+RecordFieldConstraint := 'ALLOW_EXTRA' | Identifier ':' (LengthRange | Regex | NumberRange)
 ```
 
 ---

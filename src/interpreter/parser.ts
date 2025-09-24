@@ -64,7 +64,8 @@ import type {
   AIFuncExpectClause,
   AIFuncNumberRangeClause,
   AIFuncLengthClause,
-  AIFuncRecordConstraintClause
+  AIFuncRecordConstraintClause,
+  AIFuncAllowExtraClause
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -1094,20 +1095,25 @@ class Parser {
     if (!this.check(TokenType.RightBrace)) {
       do {
         this.skipNewlines();
-        const field = this.parseIdentifier();
-        this.skipNewlines();
-        this.consume(TokenType.Colon, 'Expected ":" after field name in EXPECT record clause');
-        this.skipNewlines();
 
-        if (this.matchIdentifierName('LENGTH')) {
-          const constraint = this.parseAIFuncLengthClause();
-          clauses.push({
-            kind: 'record',
-            field: field.name,
-            constraint
-          } satisfies AIFuncRecordConstraintClause);
+        if (this.matchIdentifierName('ALLOW_EXTRA')) {
+          clauses.push({ kind: 'allow-extra' } satisfies AIFuncAllowExtraClause);
         } else {
-          throw new ParseError('Only LENGTH constraints are supported inside EXPECT { } for now', this.peek());
+          const field = this.parseIdentifier();
+          this.skipNewlines();
+          this.consume(TokenType.Colon, 'Expected ":" after field name in EXPECT record clause');
+          this.skipNewlines();
+
+          if (this.matchIdentifierName('LENGTH')) {
+            const constraint = this.parseAIFuncLengthClause();
+            clauses.push({
+              kind: 'record',
+              field: field.name,
+              constraint
+            } satisfies AIFuncRecordConstraintClause);
+          } else {
+            throw new ParseError('Only LENGTH constraints are supported inside EXPECT { } for now', this.peek());
+          }
         }
 
         this.skipNewlines();
