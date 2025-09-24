@@ -227,6 +227,71 @@ PRINT assistant.Short("BASIC9000")
     await expect(run(program.trim())).rejects.toThrow(/AIParseError/);
   });
 
+  it('coerces AIFUNC record return types', async () => {
+    const program = `
+TYPE Summary
+  summary AS STRING
+  bullets AS ARRAY<STRING>
+END TYPE
+
+AIFUNC assistant.Summarize(text AS STRING) AS Summary
+  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\\n\${text}"
+  EXPECT { summary: LENGTH 2..2, bullets: LENGTH 2..5 }
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET result = assistant.Summarize("Release notes")
+PRINT result.summary
+PRINT LEN(result.bullets)
+`;
+
+    const result = await run(program.trim());
+    expect(result.outputs[0]).toBe('OK');
+    const count = Number(result.outputs[1]);
+    expect(count).toBeGreaterThanOrEqual(2);
+    expect(count).toBeLessThanOrEqual(5);
+  });
+
+  it('enforces EXPECT constraints on record array fields', async () => {
+    const program = `
+TYPE Summary
+  summary AS STRING
+  bullets AS ARRAY<STRING>
+END TYPE
+
+AIFUNC assistant.StrictSummary(text AS STRING) AS Summary
+  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\\n\${text}"
+  EXPECT { bullets: LENGTH 1..1 }
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET result = assistant.StrictSummary("Release notes")
+PRINT result.summary
+`;
+
+    await expect(run(program.trim())).rejects.toThrow(/AIParseError/);
+  });
+
+  it('enforces EXPECT constraints on record string fields', async () => {
+    const program = `
+TYPE Summary
+  summary AS STRING
+  bullets AS ARRAY<STRING>
+END TYPE
+
+AIFUNC assistant.StrictSummary(text AS STRING) AS Summary
+  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\\n\${text}"
+  EXPECT { summary: LENGTH 3..5 }
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET result = assistant.StrictSummary("Release notes")
+PRINT result.summary
+`;
+
+    await expect(run(program.trim())).rejects.toThrow(/AIParseError/);
+  });
+
   if (process.env.OLLAMA_TEST === '1') {
     it('integrates with local Ollama provider', async () => {
       const program = `

@@ -2417,7 +2417,173 @@ class Evaluator {
       throw new RuntimeError('Unable to coerce AI response to BOOL', returnType.token);
     }
 
+    if (typeName === 'ARRAY') {
+      const parsed = this.parseJsonValue(raw, token);
+      if (!Array.isArray(parsed)) {
+        throw new RuntimeError('AIParseError: Expected JSON array for ARRAY return type', token);
+      }
+      const elementType = returnType.typeArguments?.[0];
+      return parsed.map((item) =>
+        elementType ? this.coerceJsonValue(item, elementType, token) : this.convertJsonAny(item, token)
+      );
+    }
+
+    if (typeName === 'ANY') {
+      // Ensure the payload is valid JSON but return the raw string for caller control
+      this.parseJsonValue(raw, token);
+      return raw;
+    }
+
+    const typeDefinition = this.context.getTypeDefinition(returnType.name);
+    if (typeDefinition) {
+      const parsed = this.parseJsonValue(raw, token);
+      return this.coerceJsonRecord(parsed, typeDefinition, token);
+    }
+
     throw new RuntimeError(`AIFUNC return type '${returnType.name}' is not supported yet`, token);
+  }
+
+  private parseJsonValue(raw: string, token: Token): unknown {
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new RuntimeError(`AIParseError: Expected valid JSON response (${message})`, token);
+    }
+  }
+
+  private coerceJsonValue(value: unknown, annotation: TypeAnnotationNode, token: Token): RuntimeValue {
+    const typeName = annotation.name.toUpperCase();
+
+    if (typeName === 'STRING') {
+      if (typeof value !== 'string') {
+        throw new RuntimeError('AIParseError: Expected STRING value', token);
+      }
+      return value;
+    }
+
+    if (typeName === 'NUMBER') {
+      if (typeof value === 'number' && !Number.isNaN(value)) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const coerced = Number(value.trim());
+        if (!Number.isNaN(coerced)) {
+          return coerced;
+        }
+      }
+      throw new RuntimeError('AIParseError: Expected numeric value', token);
+    }
+
+    if (typeName === 'BOOL' || typeName === 'BOOLEAN') {
+      if (typeof value === 'boolean') {
+        return booleanToRuntime(value);
+      }
+      if (typeof value === 'number') {
+        return booleanToRuntime(value !== 0);
+      }
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === 'true' || normalized === 'yes') {
+          return booleanToRuntime(true);
+        }
+        if (normalized === 'false' || normalized === 'no') {
+          return booleanToRuntime(false);
+        }
+        const numeric = Number(normalized);
+        if (!Number.isNaN(numeric)) {
+          return booleanToRuntime(numeric !== 0);
+        }
+      }
+      throw new RuntimeError('AIParseError: Expected boolean value', token);
+    }
+
+    if (typeName === 'ARRAY') {
+      if (!Array.isArray(value)) {
+        throw new RuntimeError('AIParseError: Expected ARRAY value', token);
+      }
+      const elementType = annotation.typeArguments?.[0];
+      return value.map((item) =>
+        elementType ? this.coerceJsonValue(item, elementType, token) : this.convertJsonAny(item, token)
+      );
+    }
+
+    if (typeName === 'ANY') {
+      return this.convertJsonAny(value, token);
+    }
+
+    const nestedType = this.context.getTypeDefinition(annotation.name);
+    if (nestedType) {
+      return this.coerceJsonRecord(value, nestedType, token);
+    }
+
+    throw new RuntimeError(`AIFUNC return type '${annotation.name}' is not supported yet`, token);
+  }
+
+  private coerceJsonRecord(value: unknown, typeDefinition: RuntimeTypeDefinition, token: Token): RuntimeRecordValue {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new RuntimeError(`AIParseError: Expected JSON object for record '${typeDefinition.name}'`, token);
+    }
+
+    const objectValue = value as Record<string, unknown>;
+    const entries: [string, RuntimeValue][] = [];
+
+    for (const fieldName of typeDefinition.fieldOrder) {
+      if (!Object.prototype.hasOwnProperty.call(objectValue, fieldName)) {
+        throw new RuntimeError(
+          `AIParseError: Missing field '${fieldName}' in record '${typeDefinition.name}'`,
+          token
+        );
+      }
+
+      const field = typeDefinition.fields.get(fieldName);
+      if (!field) {
+        continue;
+      }
+
+      const fieldValue = objectValue[fieldName];
+      const coerced = this.coerceJsonValue(fieldValue, field.annotation, token);
+      entries.push([fieldName, coerced]);
+    }
+
+    for (const key of Object.keys(objectValue)) {
+      if (!typeDefinition.fields.has(key)) {
+        throw new RuntimeError(
+          `AIParseError: Unexpected field '${key}' in record '${typeDefinition.name}'`,
+          token
+        );
+      }
+    }
+
+    return new RuntimeRecordValue(typeDefinition.name, entries);
+  }
+
+  private convertJsonAny(value: unknown, token: Token): RuntimeValue {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'boolean') {
+      return booleanToRuntime(value);
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => this.convertJsonAny(item, token));
+    }
+    if (typeof value === 'object') {
+      const objectValue = value as Record<string, unknown>;
+      const entries: [string, RuntimeValue][] = [];
+      for (const [key, nested] of Object.entries(objectValue)) {
+        entries.push([key, this.convertJsonAny(nested, token)]);
+      }
+      return new RuntimeRecordValue('Object', entries);
+    }
+
+    throw new RuntimeError('AIParseError: Unsupported JSON value for ANY', token);
   }
 
   private validateAIFuncExpect(
@@ -2448,15 +2614,20 @@ class Evaluator {
       }
 
       if (clause.kind === 'length') {
-        const textValue = typeof value === 'string' ? value : raw;
-        if (typeof textValue !== 'string') {
-          throw new RuntimeError('AIParseError: LENGTH constraint requires string output', token);
+        let length: number;
+        if (Array.isArray(value)) {
+          length = value.length;
+        } else if (typeof value === 'string') {
+          length = value.length;
+        } else if (typeof raw === 'string') {
+          length = raw.length;
+        } else {
+          throw new RuntimeError('AIParseError: LENGTH constraint requires string or array output', token);
         }
-        const length = textValue.length;
         const upper = clause.max ?? clause.min;
         if (length < clause.min || length > upper) {
           throw new RuntimeError(
-            `AIParseError: String length ${length} outside expected range ${clause.min}..${upper}`,
+            `AIParseError: Value length ${length} outside expected range ${clause.min}..${upper}`,
             token
           );
         }
@@ -2464,28 +2635,39 @@ class Evaluator {
       }
 
       if (clause.kind === 'record') {
-        try {
-          const parsed = JSON.parse(raw);
-          const fieldValue = parsed?.[clause.field];
-          if (!Array.isArray(fieldValue)) {
-            throw new RuntimeError(
-              `AIParseError: EXPECT field '${clause.field}' must be an array in JSON response`,
-              token
-            );
-          }
-          const length = fieldValue.length;
-          const upper = clause.constraint.max ?? clause.constraint.min;
-          if (length < clause.constraint.min || length > upper) {
-            throw new RuntimeError(
-              `AIParseError: Field '${clause.field}' length ${length} outside expected range ${clause.constraint.min}..${upper}`,
-              token
-            );
-          }
-        } catch (error) {
-          if (error instanceof RuntimeError) {
-            throw error;
-          }
-          throw new RuntimeError('AIParseError: Expected valid JSON response for record constraint', token);
+        if (!isRecordValue(value)) {
+          throw new RuntimeError('AIParseError: EXPECT { } requires record output', token);
+        }
+
+        if (!value.has(clause.field)) {
+          throw new RuntimeError(
+            `AIParseError: Missing field '${clause.field}' in record response`,
+            token
+          );
+        }
+
+        const fieldValue = value.get(clause.field);
+        let length: number | undefined;
+
+        if (Array.isArray(fieldValue)) {
+          length = fieldValue.length;
+        } else if (typeof fieldValue === 'string') {
+          length = fieldValue.length;
+        }
+
+        if (length === undefined) {
+          throw new RuntimeError(
+            `AIParseError: EXPECT field '${clause.field}' LENGTH requires string or array output`,
+            token
+          );
+        }
+
+        const upper = clause.constraint.max ?? clause.constraint.min;
+        if (length < clause.constraint.min || length > upper) {
+          throw new RuntimeError(
+            `AIParseError: Field '${clause.field}' length ${length} outside expected range ${clause.constraint.min}..${upper}`,
+            token
+          );
         }
         continue;
       }
