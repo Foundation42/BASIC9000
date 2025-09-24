@@ -41,7 +41,10 @@ import type {
   ContinueStatementNode,
   ParameterNode,
   SendStatementNode,
-  RecvExpressionNode
+  RecvExpressionNode,
+  AIFuncDeclarationNode,
+  PromptTemplateNode,
+  PromptTemplateSegment
 } from './ast.js';
 import {
   HostEnvironment,
@@ -637,6 +640,8 @@ class Evaluator {
         return this.executeFunction(statement);
       case 'SubStatement':
         return this.executeSub(statement);
+      case 'AIFuncDeclaration':
+        return this.executeAIFuncDeclaration(statement);
       case 'PropertyStatement':
         return this.executeProperty(statement);
       case 'ExitStatement':
@@ -1994,6 +1999,30 @@ class Evaluator {
     return undefined;
   }
 
+  private async executeAIFuncDeclaration(statement: AIFuncDeclarationNode): Promise<undefined> {
+    const parameters: ParameterNode[] = [statement.selfParameter, ...statement.parameters];
+
+    const functionValue: UserFunctionValue = {
+      kind: 'user-function',
+      name: statement.name.name,
+      parameters,
+      returnType: statement.returnType,
+      body: [],
+      isAsync: false,
+      aiMeta: {
+        selfParameterName: statement.selfParameter.name.name,
+        prompt: statement.prompt,
+        systemPrompt: statement.systemPrompt,
+        usingExpression: statement.usingExpression,
+        returnType: statement.returnType,
+        expect: statement.expect
+      }
+    };
+
+    this.context.registerFunction(functionValue);
+    return undefined;
+  }
+
   private async executeProperty(statement: PropertyStatementNode): Promise<undefined> {
     // Store property definition as a special function
     // Properties are stored with key "TypeName.PropertyName"
@@ -2240,6 +2269,10 @@ class Evaluator {
 
       // Execute function body
       // We use a special marker position for function execution
+      if (func.aiMeta) {
+        return await this.executeGeneratedAIFunction(func, token);
+      }
+
       for (let i = 0; i < func.body.length; i++) {
         const stmt = func.body[i];
         if (!stmt) continue;
@@ -2279,6 +2312,183 @@ class Evaluator {
       // Only AFTER executing defers, restore parameter scope (preserving global variable changes)
       this.context.restoreFunctionScope(savedParameterScope);
       this.context.restoreDeferScope(callerDeferScope);
+    }
+  }
+
+  private async executeGeneratedAIFunction(func: UserFunctionValue, token: Token): Promise<RuntimeValue> {
+    const meta = func.aiMeta!;
+    const assistantValue = this.context.getVariable(meta.selfParameterName);
+
+    if (!isRecordValue(assistantValue)) {
+      throw new RuntimeError('AIFUNC receiver must be an AIAssistant record', token);
+    }
+
+    let workingAssistant = this.cloneAssistantRecord(assistantValue);
+
+    if (meta.usingExpression) {
+      const overridesValue = await this.evaluateExpression(meta.usingExpression);
+      if (!isRecordValue(overridesValue)) {
+        const exprToken = this.getExpressionToken(meta.usingExpression);
+        throw new RuntimeError('USING expression must evaluate to a record literal', exprToken);
+      }
+      workingAssistant = this.applyAssistantOverrides(workingAssistant, overridesValue);
+    }
+
+    if (meta.systemPrompt) {
+      workingAssistant.set('SystemPrompt', meta.systemPrompt);
+    }
+
+    const prompt = this.renderPromptTemplate(meta.prompt);
+
+    const aiEntry = this.hostEnvironment.get('AI');
+    if (!aiEntry || !isHostNamespace(aiEntry)) {
+      throw new RuntimeError('AI namespace is not available', token);
+    }
+
+    const generateEntry = aiEntry.getMember('GENERATE');
+    if (!generateEntry || !isHostFunction(generateEntry)) {
+      throw new RuntimeError('AI.GENERATE function is not available', token);
+    }
+
+    const rawResult = await this.invokeCallable(generateEntry as RuntimeValue, [workingAssistant, prompt], token);
+    const stringResult = typeof rawResult === 'string' ? rawResult : runtimeValueToString(rawResult);
+    const coerced = this.coerceAIFuncResult(stringResult, meta.returnType, token);
+    this.validateAIFuncExpect(meta.expect, coerced, meta.returnType, stringResult, token);
+    return coerced;
+  }
+
+  private renderPromptTemplate(template: PromptTemplateNode): string {
+    let result = '';
+    for (const segment of template.segments) {
+      if (segment.type === 'text') {
+        result += segment.value;
+      } else {
+        const value = this.context.getVariable(segment.identifier.name);
+        result += runtimeValueToString(value);
+      }
+    }
+    return result;
+  }
+
+  private cloneAssistantRecord(record: RuntimeRecordValue): RuntimeRecordValue {
+    const entries = record.entries().map(([key, value]) => [key, value] as [string, RuntimeValue]);
+    return new RuntimeRecordValue(record.typeName, entries);
+  }
+
+  private applyAssistantOverrides(base: RuntimeRecordValue, overrides: RuntimeRecordValue): RuntimeRecordValue {
+    const clone = this.cloneAssistantRecord(base);
+    for (const [key, value] of overrides.entries()) {
+      clone.set(key, value);
+    }
+    return clone;
+  }
+
+  private coerceAIFuncResult(raw: string, returnType: TypeAnnotationNode | undefined, token: Token): RuntimeValue {
+    if (!returnType) {
+      return raw;
+    }
+
+    const typeName = returnType.name.toUpperCase();
+
+    if (typeName === 'STRING') {
+      return raw;
+    }
+
+    if (typeName === 'NUMBER') {
+      const num = Number(raw.trim());
+      if (Number.isNaN(num)) {
+        throw new RuntimeError('Unable to coerce AI response to NUMBER', returnType.token);
+      }
+      return num;
+    }
+
+    if (typeName === 'BOOL' || typeName === 'BOOLEAN') {
+      const normalized = raw.trim().toLowerCase();
+      if (normalized === 'true' || normalized === 'yes') {
+        return booleanToRuntime(true);
+      }
+      if (normalized === 'false' || normalized === 'no') {
+        return booleanToRuntime(false);
+      }
+      const numeric = Number(normalized);
+      if (!Number.isNaN(numeric)) {
+        return booleanToRuntime(numeric !== 0);
+      }
+      throw new RuntimeError('Unable to coerce AI response to BOOL', returnType.token);
+    }
+
+    throw new RuntimeError(`AIFUNC return type '${returnType.name}' is not supported yet`, token);
+  }
+
+  private validateAIFuncExpect(
+    expect: AIFuncExpectNode | undefined,
+    value: RuntimeValue,
+    returnType: TypeAnnotationNode | undefined,
+    raw: string,
+    token: Token
+  ): void {
+    if (!expect) {
+      return;
+    }
+
+    const typeName = returnType?.name.toUpperCase();
+
+    for (const clause of expect.clauses) {
+      if (clause.kind === 'number-range') {
+        if (typeof value !== 'number') {
+          throw new RuntimeError('AIParseError: RANGE constraint requires numeric output', token);
+        }
+        if (value < clause.min || value > clause.max) {
+          throw new RuntimeError(
+            `AIParseError: Value ${value} is outside expected range [${clause.min}, ${clause.max}]`,
+            token
+          );
+        }
+        continue;
+      }
+
+      if (clause.kind === 'length') {
+        const textValue = typeof value === 'string' ? value : raw;
+        if (typeof textValue !== 'string') {
+          throw new RuntimeError('AIParseError: LENGTH constraint requires string output', token);
+        }
+        const length = textValue.length;
+        const upper = clause.max ?? clause.min;
+        if (length < clause.min || length > upper) {
+          throw new RuntimeError(
+            `AIParseError: String length ${length} outside expected range ${clause.min}..${upper}`,
+            token
+          );
+        }
+        continue;
+      }
+
+      if (clause.kind === 'record') {
+        try {
+          const parsed = JSON.parse(raw);
+          const fieldValue = parsed?.[clause.field];
+          if (!Array.isArray(fieldValue)) {
+            throw new RuntimeError(
+              `AIParseError: EXPECT field '${clause.field}' must be an array in JSON response`,
+              token
+            );
+          }
+          const length = fieldValue.length;
+          const upper = clause.constraint.max ?? clause.constraint.min;
+          if (length < clause.constraint.min || length > upper) {
+            throw new RuntimeError(
+              `AIParseError: Field '${clause.field}' length ${length} outside expected range ${clause.constraint.min}..${upper}`,
+              token
+            );
+          }
+        } catch (error) {
+          if (error instanceof RuntimeError) {
+            throw error;
+          }
+          throw new RuntimeError('AIParseError: Expected valid JSON response for record constraint', token);
+        }
+        continue;
+      }
     }
   }
 

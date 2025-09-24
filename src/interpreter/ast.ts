@@ -36,7 +36,8 @@ export type StatementNode =
   | InputStatementNode
   | DeferStatementNode
   | DeferBlockStatementNode
-  | SendStatementNode;
+  | SendStatementNode
+  | AIFuncDeclarationNode;
 
 export interface BaseStatementNode {
   readonly type: StatementNode['type'];
@@ -198,6 +199,29 @@ export interface PropertyStatementNode extends BaseStatementNode {
   readonly returnType: TypeAnnotationNode;
   readonly accessorType: 'GET' | 'SET';
   readonly body: readonly StatementNode[];
+}
+
+export interface PromptTemplateNode {
+  readonly type: 'PromptTemplate';
+  readonly token: Token;
+  readonly segments: readonly PromptTemplateSegment[];
+}
+
+export type PromptTemplateSegment =
+  | { readonly type: 'text'; readonly value: string }
+  | { readonly type: 'placeholder'; readonly identifier: IdentifierNode };
+
+export interface AIFuncDeclarationNode extends BaseStatementNode {
+  readonly type: 'AIFuncDeclaration';
+  readonly receiver: IdentifierNode;
+  readonly name: IdentifierNode;
+  readonly selfParameter: ParameterNode;
+  readonly parameters: readonly ParameterNode[];
+  readonly returnType: TypeAnnotationNode;
+  readonly usingExpression?: ExpressionNode;
+  readonly systemPrompt?: string;
+  readonly prompt: PromptTemplateNode;
+  readonly expect?: AIFuncExpectNode;
 }
 
 export interface WithStatementNode extends BaseStatementNode {
@@ -393,3 +417,30 @@ export interface RecvExpressionNode {
 }
 
 export type AnyNode = ProgramNode | LineNode | StatementNode | ExpressionNode;
+export interface AIFuncExpectNode {
+  readonly token: Token;
+  readonly clauses: readonly AIFuncExpectClause[];
+}
+
+export type AIFuncExpectClause =
+  | AIFuncNumberRangeClause
+  | AIFuncLengthClause
+  | AIFuncRecordConstraintClause;
+
+export interface AIFuncNumberRangeClause {
+  readonly kind: 'number-range';
+  readonly min: number;
+  readonly max: number;
+}
+
+export interface AIFuncLengthClause {
+  readonly kind: 'length';
+  readonly min: number;
+  readonly max?: number;
+}
+
+export interface AIFuncRecordConstraintClause {
+  readonly kind: 'record';
+  readonly field: string;
+  readonly constraint: AIFuncLengthClause;
+}

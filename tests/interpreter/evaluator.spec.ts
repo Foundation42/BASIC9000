@@ -185,6 +185,48 @@ PRINT summary$
     expect(result.outputs).not.toContain('FAIL: bad summary');
   });
 
+  it('executes AIFUNC declarations against FakeAI', async () => {
+    const program = `
+AIFUNC assistant.MakeTitle(text AS STRING) AS STRING
+  PROMPT "Give a concise title for \${text}"
+  EXPECT LENGTH 5..20
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+PRINT assistant.MakeTitle("BASIC9000 Release Notes")
+`;
+    const result = await run(program.trim());
+    expect(result.outputs[0]).toMatch(/^TITLE:\d{1,4}$/);
+  });
+
+  it('enforces AIFUNC RANGE expectations', async () => {
+    const program = `
+AIFUNC assistant.Positive(text AS STRING) AS NUMBER
+  PROMPT "Return a number between -1 and 1 for \${text}"
+  EXPECT RANGE [1, 2]
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+PRINT assistant.Positive("demo")
+`;
+
+    await expect(run(program.trim())).rejects.toThrow(/AIParseError/);
+  });
+
+  it('enforces AIFUNC LENGTH expectations', async () => {
+    const program = `
+AIFUNC assistant.Short(text AS STRING) AS STRING
+  PROMPT "Give a concise title for \${text}"
+  EXPECT LENGTH 1..4
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+PRINT assistant.Short("BASIC9000")
+`;
+
+    await expect(run(program.trim())).rejects.toThrow(/AIParseError/);
+  });
+
   if (process.env.OLLAMA_TEST === '1') {
     it('integrates with local Ollama provider', async () => {
       const program = `

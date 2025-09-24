@@ -56,7 +56,15 @@ import type {
   ContinueStatementNode,
   SendStatementNode,
   RecvExpressionNode,
-  SpawnExpressionNode
+  SpawnExpressionNode,
+  PromptTemplateNode,
+  PromptTemplateSegment,
+  AIFuncDeclarationNode,
+  AIFuncExpectNode,
+  AIFuncExpectClause,
+  AIFuncNumberRangeClause,
+  AIFuncLengthClause,
+  AIFuncRecordConstraintClause
 } from './ast.js';
 
 export class ParseError extends Error {
@@ -187,6 +195,11 @@ class Parser {
     if (this.matchKeyword('SUB')) {
       const keyword = this.previous();
       return this.parseSubStatement(keyword);
+    }
+
+    if (this.matchKeyword('AIFUNC')) {
+      const keyword = this.previous();
+      return this.parseAIFuncDeclaration(keyword);
     }
 
     if (this.matchKeyword('PROPERTY')) {
@@ -842,6 +855,290 @@ class Parser {
       parameters,
       body
     } satisfies SubStatementNode;
+  }
+
+  private parseAIFuncDeclaration(keyword: Token): AIFuncDeclarationNode {
+    const receiver = this.parseIdentifier();
+    this.consume(TokenType.Dot, 'Expected "." after receiver name in AIFUNC declaration');
+    const name = this.parseIdentifier();
+
+    this.consume(TokenType.LeftParen, 'Expected "(" after function name in AIFUNC declaration');
+    const parameters = this.parseParameterList();
+    this.consume(TokenType.RightParen, 'Expected ")" after parameters in AIFUNC declaration');
+
+    this.consumeKeyword('AS');
+    const returnType = this.parseTypeAnnotation();
+
+    let usingExpression: ExpressionNode | undefined;
+    this.skipNewlines();
+    if (this.matchKeyword('USING')) {
+      usingExpression = this.parseExpression();
+    }
+
+    let systemPrompt: string | undefined;
+    this.skipNewlines();
+    if (this.matchKeyword('SYSTEM')) {
+      const systemToken = this.consume(TokenType.String, 'Expected string literal after SYSTEM');
+      systemPrompt = typeof systemToken.literal === 'string' ? systemToken.literal : systemToken.lexeme;
+    }
+
+    this.skipNewlines();
+    this.consumeKeyword('PROMPT');
+    const promptToken = this.consume(TokenType.String, 'Expected string literal after PROMPT');
+    const prompt = this.createPromptTemplate(promptToken);
+
+    this.skipNewlines();
+    let expect: AIFuncExpectNode | undefined;
+    if (this.matchKeyword('EXPECT')) {
+      expect = this.parseAIFuncExpect();
+    }
+
+    while (this.match(TokenType.Newline)) {
+      // Allow blank lines before END AIFUNC
+    }
+
+    this.consumeKeyword('END');
+    this.consumeKeyword('AIFUNC');
+
+    const selfParameter = this.createSelfParameter(receiver);
+
+    return {
+      type: 'AIFuncDeclaration',
+      token: keyword,
+      receiver: {
+        type: 'Identifier',
+        name: receiver.name,
+        token: receiver.token
+      },
+      name,
+      selfParameter,
+      parameters,
+      returnType,
+      usingExpression,
+      systemPrompt,
+      prompt,
+      expect
+    } satisfies AIFuncDeclarationNode;
+  }
+
+  private createSelfParameter(receiver: IdentifierNode): ParameterNode {
+    const identifier: IdentifierNode = {
+      type: 'Identifier',
+      name: receiver.name,
+      token: receiver.token
+    };
+
+    const typeToken = this.createSyntheticToken('AIAssistant', receiver.token, TokenType.Identifier);
+    const typeAnnotation: TypeAnnotationNode = {
+      type: 'TypeAnnotation',
+      name: 'AIAssistant',
+      token: typeToken
+    };
+
+    return {
+      name: identifier,
+      typeAnnotation,
+      isRef: false,
+      isVarArgs: false
+    } satisfies ParameterNode;
+  }
+
+  private createPromptTemplate(token: Token): PromptTemplateNode {
+    const raw = typeof token.literal === 'string' ? token.literal : token.lexeme;
+    const segments: PromptTemplateSegment[] = [];
+    let buffer = '';
+    let index = 0;
+
+    const flushBuffer = () => {
+      if (buffer.length > 0) {
+        segments.push({ type: 'text', value: buffer });
+        buffer = '';
+      }
+    };
+
+    while (index < raw.length) {
+      if (raw[index] === '\\' && raw[index + 1] === '$' && raw[index + 2] === '{') {
+        buffer += '${';
+        index += 3;
+        continue;
+      }
+
+      if (raw[index] === '$' && raw[index + 1] === '{') {
+        flushBuffer();
+        const closeIndex = raw.indexOf('}', index + 2);
+        if (closeIndex === -1) {
+          throw new ParseError('Unterminated ${} placeholder in PROMPT string', token);
+        }
+        const placeholder = raw.slice(index + 2, closeIndex).trim();
+        if (!placeholder) {
+          throw new ParseError('Empty ${} placeholder in PROMPT string', token);
+        }
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(placeholder)) {
+          throw new ParseError('Prompt placeholders must be simple identifiers', token);
+        }
+        const placeholderToken = this.createSyntheticToken(placeholder, token, TokenType.Identifier);
+        const identifier: IdentifierNode = {
+          type: 'Identifier',
+          name: placeholder,
+          token: placeholderToken
+        };
+        segments.push({ type: 'placeholder', identifier });
+        index = closeIndex + 1;
+        continue;
+      }
+
+      buffer += raw[index];
+      index += 1;
+    }
+
+    flushBuffer();
+
+    return {
+      type: 'PromptTemplate',
+      token,
+      segments
+    } satisfies PromptTemplateNode;
+  }
+
+  private createSyntheticToken(lexeme: string, base: Token, type: TokenType): Token {
+    return {
+      type,
+      lexeme,
+      literal: undefined,
+      line: base.line,
+      column: base.column
+    } satisfies Token;
+  }
+
+  private parseAIFuncExpect(): AIFuncExpectNode {
+    const expectToken = this.previous();
+    const clauses: AIFuncExpectClause[] = [];
+
+    this.skipNewlines();
+
+    clauses.push(...this.parseAIFuncExpectClauses());
+
+    return {
+      token: expectToken,
+      clauses
+    } satisfies AIFuncExpectNode;
+  }
+
+  private parseAIFuncExpectClauses(): AIFuncExpectClause[] {
+    if (this.matchIdentifierName('RANGE')) {
+      return [this.parseAIFuncRangeClause()];
+    }
+
+    if (this.matchIdentifierName('LENGTH')) {
+      return [this.parseAIFuncLengthClause()];
+    }
+
+    if (this.match(TokenType.LeftBrace)) {
+      return this.parseAIFuncRecordClauses();
+    }
+
+    throw new ParseError('Unsupported EXPECT clause', this.peek());
+  }
+
+  private parseAIFuncRangeClause(): AIFuncNumberRangeClause {
+    this.skipNewlines();
+    this.consume(TokenType.LeftBracket, 'Expected "[" after RANGE');
+    this.skipNewlines();
+    const min = this.parseNumericLiteralValue('Expected number for RANGE lower bound');
+    this.skipNewlines();
+    this.consume(TokenType.Comma, 'Expected "," between RANGE bounds');
+    this.skipNewlines();
+    const max = this.parseNumericLiteralValue('Expected number for RANGE upper bound');
+    this.skipNewlines();
+    this.consume(TokenType.RightBracket, 'Expected "]" after RANGE bounds');
+
+    if (min > max) {
+      throw new ParseError('RANGE upper bound must be greater than or equal to lower bound', this.peek());
+    }
+
+    return {
+      kind: 'number-range',
+      min,
+      max
+    } satisfies AIFuncNumberRangeClause;
+  }
+
+  private parseAIFuncLengthClause(): AIFuncLengthClause {
+    this.skipNewlines();
+    const min = this.parseNumericLiteralValue('Expected numeric length value');
+    let max = min;
+    let hasRange = false;
+
+    this.skipNewlines();
+    if (this.match(TokenType.Dot) && this.match(TokenType.Dot)) {
+      hasRange = true;
+      this.skipNewlines();
+      max = this.parseNumericLiteralValue('Expected upper bound for length range');
+    }
+
+    if (hasRange && max < min) {
+      throw new ParseError('LENGTH upper bound must be greater than or equal to lower bound', this.peek());
+    }
+
+    return {
+      kind: 'length',
+      min,
+      max: hasRange ? max : min
+    } satisfies AIFuncLengthClause;
+  }
+
+  private parseAIFuncRecordClauses(): AIFuncExpectClause[] {
+    const clauses: AIFuncExpectClause[] = [];
+    this.skipNewlines();
+
+    if (!this.check(TokenType.RightBrace)) {
+      do {
+        this.skipNewlines();
+        const field = this.parseIdentifier();
+        this.skipNewlines();
+        this.consume(TokenType.Colon, 'Expected ":" after field name in EXPECT record clause');
+        this.skipNewlines();
+
+        if (this.matchIdentifierName('LENGTH')) {
+          const constraint = this.parseAIFuncLengthClause();
+          clauses.push({
+            kind: 'record',
+            field: field.name,
+            constraint
+          } satisfies AIFuncRecordConstraintClause);
+        } else {
+          throw new ParseError('Only LENGTH constraints are supported inside EXPECT { } for now', this.peek());
+        }
+
+        this.skipNewlines();
+      } while (this.match(TokenType.Comma));
+    }
+
+    this.consume(TokenType.RightBrace, 'Expected "}" after EXPECT record constraints');
+    return clauses;
+  }
+
+  private parseNumericLiteralValue(message: string): number {
+    let sign = 1;
+    if (this.matchOperator('+', '-')) {
+      const operator = this.previous();
+      sign = operator.lexeme === '-' ? -1 : 1;
+    }
+
+    const token = this.consume(TokenType.Number, message);
+    const value = typeof token.literal === 'number' ? token.literal : Number(token.lexeme);
+    if (Number.isNaN(value)) {
+      throw new ParseError('Invalid numeric literal', token);
+    }
+    return sign * value;
+  }
+
+  private matchIdentifierName(name: string): boolean {
+    if (this.check(TokenType.Identifier) && this.peek().lexeme.toUpperCase() === name.toUpperCase()) {
+      this.advance();
+      return true;
+    }
+    return false;
   }
 
   private parsePropertyStatement(keyword: Token): PropertyStatementNode {

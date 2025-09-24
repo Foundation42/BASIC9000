@@ -8,7 +8,8 @@ import type {
   LineNode,
   PrintStatementNode,
   RecordLiteralNode,
-  TypeDeclarationNode
+  TypeDeclarationNode,
+  AIFuncDeclarationNode
 } from '../../src/interpreter/ast.js';
 
 describe('parser', () => {
@@ -115,6 +116,38 @@ describe('parser', () => {
     expect(record.typeName.name).toBe('Vector');
     expect(record.fields).toHaveLength(2);
     expect(record.fields[0]?.name.name).toBe('x');
+  });
+
+  it('parses AIFUNC declarations with prompt templates', () => {
+    const source = `AIFUNC assistant.MakeTitle(text AS STRING) AS STRING\n  SYSTEM "You are concise"\n  PROMPT "Title for \${text}"\nEND AIFUNC`;
+    const program = parseSource(source);
+    const statement = firstLine(program).statements[0] as AIFuncDeclarationNode;
+    expect(statement.type).toBe('AIFuncDeclaration');
+    expect(statement.receiver.name).toBe('assistant');
+    expect(statement.name.name).toBe('MakeTitle');
+    expect(statement.parameters).toHaveLength(1);
+    expect(statement.parameters[0]?.name.name).toBe('text');
+    expect(statement.prompt.segments).toHaveLength(2);
+    const [, placeholder] = statement.prompt.segments;
+    if (placeholder?.type === 'placeholder') {
+      expect(placeholder.identifier.name).toBe('text');
+    } else {
+      throw new Error('Expected placeholder segment');
+    }
+    expect(statement.systemPrompt).toBe('You are concise');
+  });
+
+  it('parses AIFUNC EXPECT clauses', () => {
+    const source = `AIFUNC assistant.Sentiment(text AS STRING) AS NUMBER\n  PROMPT "Score for \${text}"\n  EXPECT RANGE [-1, 1]\nEND AIFUNC`;
+    const program = parseSource(source);
+    const statement = firstLine(program).statements[0] as AIFuncDeclarationNode;
+    expect(statement.expect).toBeDefined();
+    const clause = statement.expect?.clauses[0];
+    expect(clause?.kind).toBe('number-range');
+    if (clause?.kind === 'number-range') {
+      expect(clause.min).toBe(-1);
+      expect(clause.max).toBe(1);
+    }
   });
 
   it('raises on invalid assignments', () => {

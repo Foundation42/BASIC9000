@@ -111,7 +111,12 @@ const KEYWORDS = new Set<string>([
   'FALSE',
   'NULL',
   'PUBLIC',
-  'SPREAD'
+  'SPREAD',
+  'AIFUNC',
+  'PROMPT',
+  'SYSTEM',
+  'EXPECT',
+  'USING'
 ]);
 
 const SINGLE_CHAR_OPERATORS = new Map<string, TokenType>([
@@ -217,8 +222,10 @@ export function tokenize(source: string, options: TokenizerOptions = {}): Token[
 
     if (char === '.') {
       const position = { line: cursor.line, column: cursor.column };
+      const nextChar = peekNext(cursor);
+      const afterNextChar = cursor.source[cursor.index + 2];
       // Check for spread operator (...)
-      if (peek(cursor) === '.' && peekNext(cursor) === '.') {
+      if (nextChar === '.' && afterNextChar === '.') {
         advance(cursor); // consume first .
         advance(cursor); // consume second .
         advance(cursor); // consume third .

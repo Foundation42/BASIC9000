@@ -1,5 +1,5 @@
 import type { HostFunctionValue, HostNamespaceValue } from './host.js';
-import type { ParameterNode, StatementNode, TypeAnnotationNode } from './ast.js';
+import type { ParameterNode, StatementNode, TypeAnnotationNode, PromptTemplateNode, ExpressionNode, AIFuncExpectNode } from './ast.js';
 
 export type RuntimeScalar = number | string | boolean | null;
 
@@ -44,6 +44,16 @@ export interface UserFunctionValue {
   readonly body: readonly StatementNode[];
   readonly isAsync: boolean;
   readonly isSub?: boolean;
+  readonly aiMeta?: AIFunctionMetadata;
+}
+
+export interface AIFunctionMetadata {
+  readonly selfParameterName: string;
+  readonly prompt: PromptTemplateNode;
+  readonly systemPrompt?: string;
+  readonly usingExpression?: ExpressionNode;
+  readonly returnType: TypeAnnotationNode | undefined;
+  readonly expect?: AIFuncExpectNode;
 }
 
 export interface BoundFunctionValue {
