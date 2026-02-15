@@ -687,21 +687,66 @@ PRINT answer$
 ```
 
 #### Structured AI Output with AIFUNC
+
+`AIFUNC` declares AI-backed functions with typed return values, prompt templates, and optional output constraints. The return type defines the expected JSON schema, and `EXPECT` clauses add runtime validation on top.
+
 ```basic
+' Define the shape of the AI response
 TYPE Summary
   summary AS STRING
   bullets AS ARRAY<STRING>
 END TYPE
 
+' Declare an AI function bound to an assistant instance
 AIFUNC assistant.Summarize(text AS STRING) AS Summary
-  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\n${text}"
+  SYSTEM "You write crisp technical summaries."
+  PROMPT "Summarize in <= 5 bullets and one sentence.\n\n${text}"
   EXPECT { summary: LENGTH 1..160, bullets: LENGTH 0..5 OF LENGTH 1..64 }
 END AIFUNC
 
 LET assistant = NEW AIAssistant("openai", "gpt-4")
 LET result = assistant.Summarize("Some long article text...")
 PRINT result.summary
-PRINT LEN(result.bullets) + " bullet points"
+FOR i = 0 TO LEN(result.bullets) - 1
+  PRINT "- " + result.bullets[i]
+NEXT i
+```
+
+**EXPECT Constraints:**
+
+| Constraint | Applies to | Example |
+|------------|-----------|---------|
+| `LENGTH n` or `LENGTH a..b` | Strings, arrays | `EXPECT LENGTH 1..160` |
+| `LENGTH a..b OF LENGTH c..d` | Array elements | `EXPECT LENGTH 0..5 OF LENGTH 1..64` |
+| `RANGE [min, max]` | Numbers | `EXPECT RANGE [-1, 1]` |
+| `MATCH /regex/` | Strings | `EXPECT MATCH /^[A-Z]/` |
+| `{ field: constraint }` | Records | `EXPECT { bullets: LENGTH 0..5 }` |
+| `ALLOW_EXTRA` | Records | `EXPECT { ALLOW_EXTRA, name: LENGTH 1..50 }` |
+
+Constraints that fail at runtime raise `AIParseError`, which you can catch with TRY/CATCH:
+
+```basic
+TRY
+  LET result = assistant.Summarize(doc$)
+CATCH AIParseError
+  PRINT "AI returned unexpected output format"
+CATCH AIRateLimit
+  PRINT "Rate limited - try again later"
+END TRY
+```
+
+**Per-call overrides** let you tweak settings without mutating the assistant:
+
+```basic
+LET fast = assistant.With({ Temperature: 0.2, CachePolicy: "ttl:300" })
+LET result = fast.Summarize(doc$)
+```
+
+**FakeAI backend** enables deterministic offline testing with `Provider: "fake"`, `Model: "deterministic"` - no API keys needed:
+
+```basic
+LET test_ai = NEW AIAssistant("fake", "deterministic")
+LET result = test_ai.Summarize("test input")  ' Returns predictable output
 ```
 
 ## 🤝 Contributing
