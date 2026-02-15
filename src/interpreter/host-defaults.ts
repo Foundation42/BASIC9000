@@ -235,7 +235,7 @@ function createAssistantHelperNamespace() {
 
       const entries = new Map(self.entries());
 
-      if (isRecordValue(overrides)) {
+      if (overrides && isRecordValue(overrides)) {
         for (const [key, value] of overrides.entries()) {
           if (!entries.has(key)) {
             throw new Error(`Unknown assistant field '${key}'`);

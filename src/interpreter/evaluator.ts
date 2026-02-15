@@ -44,7 +44,6 @@ import type {
   RecvExpressionNode,
   AIFuncDeclarationNode,
   PromptTemplateNode,
-  PromptTemplateSegment,
   AIFuncExpectNode,
   AIFuncLengthClause
 } from './ast.js';
@@ -2611,8 +2610,6 @@ class Evaluator {
     if (!expect) {
       return;
     }
-
-    const typeName = returnType?.name.toUpperCase();
 
     for (const clause of expect.clauses) {
       if (clause.kind === 'number-range') {
