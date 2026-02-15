@@ -133,10 +133,10 @@ PRINT assistant.CostBudget
     ]);
   });
 
-  it('produces non-mutating overrides with assistant.With', async () => {
+  it('produces non-mutating overrides with assistant.WITH', async () => {
     const program = `
 LET assistant = NEW AIAssistant("fake", "deterministic")
-LET fast = assistant.With({ Temperature:0.2, CachePolicy:"ttl:60" })
+LET fast = assistant.WITH({ Temperature:0.2, CachePolicy:"ttl:60" })
 PRINT assistant.Temperature
 PRINT fast.Temperature
 PRINT fast.CachePolicy

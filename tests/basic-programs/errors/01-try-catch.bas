@@ -4,11 +4,11 @@ REM EXPECT: Errors can be caught and handled
 TYPE Result
   success AS BOOL
   value AS NUMBER
-  error AS STRING
+  errmsg AS STRING
 END TYPE
 
 FUNCTION SafeDivide(a AS NUMBER, b AS NUMBER) AS Result
-  LET result = Result { success: FALSE, value: 0, error: "" }
+  LET result = Result { success: FALSE, value: 0, errmsg: "" }
 
   TRY
     IF b = 0 THEN
@@ -17,7 +17,7 @@ FUNCTION SafeDivide(a AS NUMBER, b AS NUMBER) AS Result
     result.value = a / b
     result.success = TRUE
   CATCH e
-    result.error = e.message
+    result.errmsg = e.message
   END TRY
 
   RETURN result
@@ -33,7 +33,7 @@ END IF
 
 ' Test division by zero
 LET r2 = SafeDivide(10, 0)
-IF NOT r2.success AND INSTR(r2.error, "Division by zero") > 0 THEN
+IF NOT r2.success AND INSTR(r2.errmsg, "Division by zero") > 0 THEN
   PRINT "PASS: Caught division by zero"
 ELSE
   PRINT "FAIL: Error not caught properly"

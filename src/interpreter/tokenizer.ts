@@ -213,7 +213,9 @@ export function tokenize(source: string, options: TokenizerOptions = {}): Token[
     }
 
     if (isIdentifierStart(char)) {
-      const token = scanIdentifierOrKeyword(cursor, includeComments);
+      const prevToken = tokens.length > 0 ? tokens[tokens.length - 1] : undefined;
+      const afterDot = prevToken?.type === TokenType.Dot;
+      const token = scanIdentifierOrKeyword(cursor, includeComments, afterDot);
       if (token) {
         tokens.push(token);
       }
@@ -361,7 +363,39 @@ function scanNumber(cursor: Cursor): Token {
   return createToken(TokenType.Number, lexeme, value, startLine, startColumn);
 }
 
-function scanIdentifierOrKeyword(cursor: Cursor, includeComments: boolean): Token | null {
+const LOWERCASE_SCOLDS = [
+  (got: string, want: string) =>
+    `'${got}'? This is BASIC, not basic. Use ${want}.`,
+  (got: string, want: string) =>
+    `I know what you meant by '${got}', but the year is 1983 and CAPS LOCK is LAW. Use ${want}.`,
+  (got: string, want: string) =>
+    `?DIGNITY ERROR: '${got}' lacks the authority of ${want}. HOLD SHIFT AND TRY AGAIN.`,
+  (got: string, want: string) =>
+    `Nice try, but '${got}' doesn't fly here. This machine demands ${want}.`,
+  (got: string, want: string) =>
+    `'${got}'?! Were you raised in a UNIX terminal? We use ${want} in this house.`,
+  (got: string, want: string) =>
+    `Sir/Madam, this is a BASIC9000. We speak in ${want}, not '${got}'.`,
+  (got: string, want: string) =>
+    `CAPS LOCK is not optional — it's a way of life. '${got}' should be ${want}.`,
+  (got: string, want: string) =>
+    `The ghost of Kemeny and Kurtz weeps at '${got}'. They demand ${want}.`,
+];
+
+function lowercaseScold(got: string, want: string): string {
+  const index = simpleHash(got) % LOWERCASE_SCOLDS.length;
+  return LOWERCASE_SCOLDS[index](got, want);
+}
+
+function simpleHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function scanIdentifierOrKeyword(cursor: Cursor, includeComments: boolean, afterDot = false): Token | null {
   const startLine = cursor.line;
   const startColumn = cursor.column;
   let lexeme = '';
@@ -380,6 +414,12 @@ function scanIdentifierOrKeyword(cursor: Cursor, includeComments: boolean): Toke
   const upper = lexeme.toUpperCase();
 
   if (upper === 'REM') {
+    if (lexeme !== 'REM' && !afterDot) {
+      throw new TokenizeError(
+        lowercaseScold(lexeme, 'REM'),
+        startLine, startColumn
+      );
+    }
     if (includeComments) {
       const commentText = readCommentRemainder(cursor);
       return createToken(TokenType.Comment, `REM${commentText.raw}`, commentText.text, startLine, startColumn);
@@ -388,7 +428,13 @@ function scanIdentifierOrKeyword(cursor: Cursor, includeComments: boolean): Toke
     return null;
   }
 
-  if (KEYWORDS.has(upper)) {
+  if (KEYWORDS.has(upper) && !afterDot) {
+    if (lexeme !== upper) {
+      throw new TokenizeError(
+        lowercaseScold(lexeme, upper),
+        startLine, startColumn
+      );
+    }
     if (upper === 'TRUE') {
       return createToken(TokenType.Keyword, upper, true, startLine, startColumn);
     }

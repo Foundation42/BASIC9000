@@ -136,4 +136,31 @@ describe('tokenize', () => {
   it('throws on unterminated strings', () => {
     expect(() => tokenize('PRINT "oops')).toThrow(TokenizeError);
   });
+
+  it('scolds you for lowercase keywords', () => {
+    expect(() => tokenize('print "HELLO"')).toThrow(TokenizeError);
+    expect(() => tokenize('print "HELLO"')).toThrow(/PRINT/);
+  });
+
+  it('scolds you for mixed-case keywords', () => {
+    expect(() => tokenize('Print "HELLO"')).toThrow(TokenizeError);
+    expect(() => tokenize('Let x = 1')).toThrow(/LET/);
+  });
+
+  it('scolds you for lowercase rem', () => {
+    expect(() => tokenize('rem this is a comment')).toThrow(TokenizeError);
+    expect(() => tokenize('rem this is a comment')).toThrow(/REM/);
+  });
+
+  it('still allows uppercase keywords just fine', () => {
+    const tokens = tokenize('PRINT "HELLO"');
+    expect(tokens[0].type).toBe(TokenType.Keyword);
+    expect(tokens[0].lexeme).toBe('PRINT');
+  });
+
+  it('still allows lowercase identifiers (non-keywords)', () => {
+    const tokens = tokenize('LET myVar = 42');
+    expect(tokens[1].type).toBe(TokenType.Identifier);
+    expect(tokens[1].lexeme).toBe('myVar');
+  });
 });
