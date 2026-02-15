@@ -21,7 +21,7 @@ It feels like you just walked into an alternate 1983 where BASIC kept evolving i
 | Enhanced LEN() | v1.0 | Works on strings & arrays |
 | Actor Model | v1.0 | `LET worker = SPAWN "worker"` |
 | AIFUNC Structured Output | v1.0 | `AIFUNC bot.Sum(t AS STRING) AS Summary` |
-| **145/145 Tests Passing** | ✅ | **Perfect coverage achieved** |
+| **150/150 Tests Passing** | ✅ | **Perfect coverage achieved** |
 
 ![Boot Screen](BOOT.png)
 
@@ -75,10 +75,10 @@ It feels like you just walked into an alternate 1983 where BASIC kept evolving i
 
 ## 🧪 World-Class Test Coverage
 
-**145/145 tests passing** with comprehensive validation of all language features! 🎯
+**150/150 tests passing** with comprehensive validation of all language features! 🎯
 
 ### 🔬 **Comprehensive Test Suite**
-- **145 total tests** covering every aspect of BASIC9000
+- **150 total tests** covering every aspect of BASIC9000
 - **8 new test categories** for modern language features:
   - UFCS with record spread combinations
   - NEW operator with method chaining
@@ -104,7 +104,7 @@ Our professional-grade testing uncovered and fixed **major interpreter bugs**:
 - **Performance regression prevention**
 - **Conformance validation** against language specification
 
-Run `npm test` to see all 145 tests pass in seconds! ⚡
+Run `npm test` to see all 150 tests pass in seconds! ⚡
 
 ## 🎉 AMAZING PROGRESS TODAY!
 
@@ -159,7 +159,7 @@ Run `npm test` to see all 145 tests pass in seconds! ⚡
 - Clean terminal initialization sequence
 
 ### 📊 **By The Numbers:**
-- ✅ **145/145 tests passing** (100% success rate!)
+- ✅ **150/150 tests passing** (100% success rate!)
 - 🎯 **7 major features** implemented and polished (including Actor Model!)
 - 🚀 **Modernized codebase** with legacy GOTO/GOSUB removed
 - 🆕 **NEW operator** brings object-oriented elegance to BASIC
