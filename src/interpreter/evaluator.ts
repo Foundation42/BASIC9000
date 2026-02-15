@@ -44,7 +44,9 @@ import type {
   RecvExpressionNode,
   AIFuncDeclarationNode,
   PromptTemplateNode,
-  PromptTemplateSegment
+  PromptTemplateSegment,
+  AIFuncExpectNode,
+  AIFuncLengthClause
 } from './ast.js';
 import {
   HostEnvironment,
@@ -2627,24 +2629,31 @@ class Evaluator {
       }
 
       if (clause.kind === 'length') {
-        let length: number;
         if (Array.isArray(value)) {
-          length = value.length;
-        } else if (typeof value === 'string') {
-          length = value.length;
-        } else if (typeof raw === 'string') {
-          length = raw.length;
-        } else {
-          throw new RuntimeError('AIParseError: LENGTH constraint requires string or array output', token);
+          this.ensureLengthInRange(clause, value.length, token, 'Value');
+          if (clause.element) {
+            this.validateArrayElementLength(clause.element, value, token);
+          }
+          continue;
         }
-        const upper = clause.max ?? clause.min;
-        if (length < clause.min || length > upper) {
-          throw new RuntimeError(
-            `AIParseError: Value length ${length} outside expected range ${clause.min}..${upper}`,
-            token
-          );
+
+        if (typeof value === 'string') {
+          this.ensureLengthInRange(clause, value.length, token, 'Value');
+          if (clause.element) {
+            throw new RuntimeError('AIParseError: LENGTH OF constraint only applies to arrays', token);
+          }
+          continue;
         }
-        continue;
+
+        if (typeof raw === 'string') {
+          this.ensureLengthInRange(clause, raw.length, token, 'Value');
+          if (clause.element) {
+            throw new RuntimeError('AIParseError: LENGTH OF constraint only applies to arrays', token);
+          }
+          continue;
+        }
+
+        throw new RuntimeError('AIParseError: LENGTH constraint requires string or array output', token);
       }
 
       if (clause.kind === 'record') {
@@ -2660,30 +2669,75 @@ class Evaluator {
         }
 
         const fieldValue = value.get(clause.field);
-        let length: number | undefined;
 
         if (Array.isArray(fieldValue)) {
-          length = fieldValue.length;
-        } else if (typeof fieldValue === 'string') {
-          length = fieldValue.length;
+          this.ensureLengthInRange(clause.constraint, fieldValue.length, token, `Field '${clause.field}'`);
+          if (clause.constraint.element) {
+            this.validateArrayElementLength(clause.constraint.element, fieldValue, token);
+          }
+          continue;
         }
 
-        if (length === undefined) {
-          throw new RuntimeError(
-            `AIParseError: EXPECT field '${clause.field}' LENGTH requires string or array output`,
-            token
-          );
+        if (typeof fieldValue === 'string') {
+          this.ensureLengthInRange(clause.constraint, fieldValue.length, token, `Field '${clause.field}'`);
+          if (clause.constraint.element) {
+            throw new RuntimeError(
+              `AIParseError: EXPECT field '${clause.field}' LENGTH OF constraint only applies to array outputs`,
+              token
+            );
+          }
+          continue;
         }
 
-        const upper = clause.constraint.max ?? clause.constraint.min;
-        if (length < clause.constraint.min || length > upper) {
-          throw new RuntimeError(
-            `AIParseError: Field '${clause.field}' length ${length} outside expected range ${clause.constraint.min}..${upper}`,
-            token
-          );
+        throw new RuntimeError(
+          `AIParseError: EXPECT field '${clause.field}' LENGTH requires string or array output`,
+          token
+        );
+      }
+    }
+  }
+
+  private ensureLengthInRange(
+    clause: AIFuncLengthClause,
+    length: number,
+    token: Token,
+    subject: string
+  ): void {
+    const upper = clause.max ?? clause.min;
+    if (length < clause.min || length > upper) {
+      throw new RuntimeError(
+        `AIParseError: ${subject} length ${length} outside expected range ${clause.min}..${upper}`,
+        token
+      );
+    }
+  }
+
+  private validateArrayElementLength(
+    clause: AIFuncLengthClause,
+    elements: RuntimeValue[],
+    token: Token
+  ): void {
+    for (const element of elements) {
+      if (typeof element === 'string') {
+        this.ensureLengthInRange(clause, element.length, token, 'Array element');
+        if (clause.element) {
+          throw new RuntimeError('AIParseError: LENGTH OF can only recurse over arrays', token);
         }
         continue;
       }
+
+      if (Array.isArray(element)) {
+        this.ensureLengthInRange(clause, element.length, token, 'Array element');
+        if (clause.element) {
+          this.validateArrayElementLength(clause.element, element, token);
+        }
+        continue;
+      }
+
+      throw new RuntimeError(
+        'AIParseError: LENGTH OF constraint requires array elements to be string or array values',
+        token
+      );
     }
   }
 

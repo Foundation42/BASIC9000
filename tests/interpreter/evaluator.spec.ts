@@ -336,6 +336,49 @@ PRINT LEN(result.bullets)
     expect(bulletCount).toBeGreaterThan(0);
   });
 
+  it('enforces array element length constraints via OF', async () => {
+    const program = `
+TYPE Summary
+  summary AS STRING
+  bullets AS ARRAY<STRING>
+END TYPE
+
+AIFUNC assistant.SummaryWithShortBullets(text AS STRING) AS Summary
+  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\\n\${text}"
+  EXPECT { bullets: LENGTH 2..5 OF LENGTH 1..1 }
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET result = assistant.SummaryWithShortBullets("Release notes")
+PRINT LEN(result.bullets)
+`;
+
+    const result = await run(program.trim());
+    const bulletCount = Number(result.outputs[0]);
+    expect(bulletCount).toBeGreaterThanOrEqual(2);
+    expect(bulletCount).toBeLessThanOrEqual(5);
+  });
+
+  it('rejects arrays whose elements violate OF length constraints', async () => {
+    const program = `
+TYPE Summary
+  summary AS STRING
+  bullets AS ARRAY<STRING>
+END TYPE
+
+AIFUNC assistant.StrictBulletLengths(text AS STRING) AS Summary
+  PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\\n\${text}"
+  EXPECT { bullets: LENGTH 2..5 OF LENGTH 2..5 }
+END AIFUNC
+
+LET assistant = NEW AIAssistant("fake", "deterministic")
+LET result = assistant.StrictBulletLengths("Release notes")
+PRINT LEN(result.bullets)
+`;
+
+    await expect(run(program.trim())).rejects.toThrow(/Array element length/);
+  });
+
   if (process.env.OLLAMA_TEST === '1') {
     it('integrates with local Ollama provider', async () => {
       const program = `

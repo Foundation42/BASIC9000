@@ -438,6 +438,7 @@ export interface AIFuncLengthClause {
   readonly kind: 'length';
   readonly min: number;
   readonly max?: number;
+  readonly element?: AIFuncLengthClause;
 }
 
 export interface AIFuncRecordConstraintClause {

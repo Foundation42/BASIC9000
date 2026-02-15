@@ -272,7 +272,7 @@ Every call is a tuple frame (see `TUPLE.md`):
 **Arrays**
 
 * `ARRAY<T>`: JSON array; each element validated against `T`.
-* Constraints: `LENGTH n` or `LENGTH a..b`; element constraints via `OF`.
+* Constraints: `LENGTH n` or `LENGTH a..b`; element constraints via `OF LENGTH …`.
 
 **Records**
 
@@ -317,14 +317,14 @@ END TYPE
 
 AIFUNC assistant.Summarize(text AS STRING) AS Summary
   PROMPT "Return JSON: { summary, bullets } with at most 5 bullets.\n\n${text}"
-  EXPECT { summary: LENGTH 1..160, bullets: LENGTH 0..5 }
+  EXPECT { summary: LENGTH 1..160, bullets: LENGTH 0..5 OF LENGTH 1..64 }
 END AIFUNC
 ```
 
 Add `ALLOW_EXTRA` inside the record constraint when providers tack on metadata fields you want to tolerate:
 
 ```basic
-  EXPECT { ALLOW_EXTRA, summary: LENGTH 1..160, bullets: LENGTH 0..5 }
+  EXPECT { ALLOW_EXTRA, summary: LENGTH 1..160, bullets: LENGTH 0..5 OF LENGTH 1..64 }
 ```
 
 ### 6.4 Per‑call overrides without mutation
@@ -385,7 +385,7 @@ AIFuncDecl := "AIFUNC" Identifier '.' Identifier '(' [ ParamList ] ')' 'AS' Type
 
 ExpectClause := NumberRange | LengthRange | Regex | RecordConstraint
 NumberRange  := 'RANGE' '[' Number ',' Number ']'
-LengthRange  := 'LENGTH' (Number | Number '..' Number)
+LengthRange  := 'LENGTH' (Number | Number '..' Number) ['OF' LengthRange]
 Regex        := 'MATCH' '/' <regex> '/'
 RecordConstraint := '{' RecordFieldConstraint { ',' RecordFieldConstraint } '}'
 RecordFieldConstraint := 'ALLOW_EXTRA' | Identifier ':' (LengthRange | Regex | NumberRange)

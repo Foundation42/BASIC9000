@@ -1081,10 +1081,21 @@ class Parser {
       throw new ParseError('LENGTH upper bound must be greater than or equal to lower bound', this.peek());
     }
 
+    let element: AIFuncLengthClause | undefined;
+    this.skipNewlines();
+    if (this.matchIdentifierName('OF')) {
+      this.skipNewlines();
+      if (!this.matchIdentifierName('LENGTH')) {
+        throw new ParseError('Only LENGTH constraints are supported after OF for now', this.peek());
+      }
+      element = this.parseAIFuncLengthClause();
+    }
+
     return {
       kind: 'length',
       min,
-      max: hasRange ? max : min
+      max: hasRange ? max : min,
+      element
     } satisfies AIFuncLengthClause;
   }
 

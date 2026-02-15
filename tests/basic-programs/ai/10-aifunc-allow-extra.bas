@@ -8,7 +8,7 @@ END TYPE
 
 AIFUNC assistant.LooseSummary(text AS STRING) AS Summary
   PROMPT "Return JSON: { summary, bullets } with at most 5 bullets. EXTRA_FIELD\n${text}"
-  EXPECT { ALLOW_EXTRA, bullets: LENGTH 1..5 }
+  EXPECT { ALLOW_EXTRA, bullets: LENGTH 1..5 OF LENGTH 1..1 }
 END AIFUNC
 
 LET assistant = NEW AIAssistant("fake", "deterministic")
